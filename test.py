@@ -1,7 +1,6 @@
 import sqlite3
 import app
 
-
 # print(app.connectAndUpload("web_app_db.sqlite", ["PointsTable", "BuffersTable", "LinesTable", "PeaksTable"]))
 
 # connection = sqlite3.connect("web_app_db.sqlite")
@@ -30,3 +29,7 @@ import app
 #               42.40102362155978
 #             ]]}
 # print(str(a))
+
+with open("test.txt", "r") as file:
+  a = file.readline()
+  print(a)
