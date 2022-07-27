@@ -40,8 +40,10 @@ def connectAndUpload(DBpath, tableList):
         for i in tableList[1:]:
             data = cursor.execute(f"SELECT * FROM {i}").fetchall()
             if not len(data) == 0:
-                # {name: xxx, geometry: {"type": "Polygon", "coordinates": []}}
-                initialData[data[0][1]] = data[0][0]
+                initialData[i] = {}
+                for j in data:
+                    initialData[i][j[1]] = j[0]
+                # {name: xxx, table: xxx, geometry: {"type": "Polygon", "coordinates": []}}
     else:
         if not checkMetaDataBase(DBpath):
             # create database if not exist
@@ -75,10 +77,21 @@ def connectAndUpload(DBpath, tableList):
             initialData["error"] = "DB missing"
     return initialData
 
+def deleteFromDB(DBpath, tableName, dataName):
+    try:
+        connection = sqlite3.connect(DBpath)
+        cursor = connection.cursor()
+        delete_code = '''DELETE FROM {tableName} WHERE Source_name=="{dataName}"'''.format(tableName = tableName, dataName = dataName)
+        cursor.execute(delete_code)
+        connection.commit()
+        return True
+    except:
+        return False
 
-# @app.route('/', methods=["GET", "POST"])
-# def index():
-#     return ("Hello World")
+
+@app.route('/', methods=["GET", "POST"])
+def index():
+    return ("Welcome to sniffer web app")
 
 # Back end functions.
 @app.route('/accessDB', methods=["GET", "POST"])
@@ -90,17 +103,43 @@ def accessDB():
             allDBpaths = {"paths": []}
             with open('MetaDataBase.json', 'w') as f:
                 f.write(json.dumps(allDBpaths, indent=4))
+        global localPath
         localPath = request.json["DBpath"]
         sqliteTableList = ["PointsTable", "BuffersTable", "LinesTable", "PeaksTable"]
         return connectAndUpload(localPath, sqliteTableList)
     return ("Test")
 
+@app.route('/delete/<table>/<dataName>', methods=["DELETE"])
+@cross_origin()
+def delete(table, dataName):
+    if deleteFromDB(localPath, table, dataName):
+        return ({"status": 200})
+    else:
+        return ({"status": 204})
+
 
 if __name__ == '__main__':
     app.run()
+
+    # print(deleteFromDB("/Users/apple/Desktop/python/internship/web_vue/web_viewer_back/web_app_db.sqlite", "BuffersTable", "buffer_polygon_test"))
 
     # if not os.path.exists('MetaDataBase.json'):
     #     allDBpaths = {"paths": []}
     #     with open('MetaDataBase.json', 'w') as f:
     #         f.write(json.dumps(allDBpaths, indent=4))
     # print(connectAndUpload("/Users/apple/Desktop/python/internship/web_vue/web_viewer_back/web_app_db.sqlite", ["PointsTable", "BuffersTable", "LinesTable", "PeaksTable"]))
+
+    # some sqlite code for testing:
+    # INSERT INTO BuffersTable
+    # VALUES ("{'type': 'Polygon', 'coordinates': [[[-83.56849193572998, 42.39554091720936], [-83.55626106262207, 42.39344912341609], [-83.55681896209717, 42.397727717992005], [-83.56849193572998, 42.39554091720936]]]}", "buffer_polygon_test")
+
+    # INSERT INTO BuffersTable
+    # VALUES ("{'type': 'Polygon', 'coordinates': [[[-83.54278564453125,42.39848832648868],[-83.54570388793944,42.39024791005226],[-83.53274345397949,42.39176929913866],[-83.53008270263672,42.39810802339276],[-83.53763580322266,42.3958261564156],[-83.54278564453125,42.39848832648868]]]}", "buffer_polygon_test_2")
+
+    # INSERT INTO BuffersTable
+    # VALUES ("{'type': 'LineString', 'coordinates': [[-83.55939388275146, 42.41135388972042], [-83.5478925704956, 42.411132092017496], [-83.54308605194092, 42.40634740777102], [-83.54304313659667, 42.40102362155978]]}", "line_test")
+
+    # buffer_polygon_test_2
+    # {'type': 'Polygon', 'coordinates': [[[-83.54278564453125,42.39848832648868],[-83.54570388793944,42.39024791005226],[-83.53274345397949,42.39176929913866],[-83.53008270263672,42.39810802339276],[-83.53763580322266,42.3958261564156],[-83.54278564453125,42.39848832648868]]]}
+    # line_test
+    # {'type': 'LineString', 'coordinates': [[-83.55939388275146, 42.41135388972042], [-83.5478925704956, 42.411132092017496], [-83.54308605194092, 42.40634740777102], [-83.54304313659667, 42.40102362155978]]}
