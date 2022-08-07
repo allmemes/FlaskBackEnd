@@ -1,5 +1,10 @@
 import sqlite3
 import app
+import pandas as pd
+import csvprocessing as cp
+import geometry_tools as gt
+import json
+from shapely.geometry import mapping
 
 # print(app.connectAndUpload("web_app_db.sqlite", ["PointsTable", "BuffersTable", "LinesTable", "PeaksTable"]))
 
@@ -30,6 +35,26 @@ import app
 #             ]]}
 # print(str(a))
 
-with open("test.txt", "r") as file:
-  a = file.readline()
-  print(a)
+# with open("test.txt", "r") as file:
+#   a = file.readline()
+#   print(a)
+
+testDf = pd.read_csv("/Users/apple/Desktop/python/internship/webviewer_example/local-map-viewer/test_data/lat_lon_zeroes.csv")
+df = cp.clean_flight_log("test_small", testDf)
+for i in df["SenseLat"]:
+  print(type(i))
+
+# print(df["SenseLong"].isnull().values.any())
+# for i in df["SenseLat"]:
+#   print(i)
+
+# gt.add_points_to_df(df)
+# points = gt.series_to_multipoint(list(df["points"]))
+# sr = gt.find_utm_zone(points[0].y, points[0].x)
+# points = gt.reproject(points, sr)
+# buff = points.buffer(15.0)
+# buff = gt.reproject(buff, 4326, sr)
+# geo_j = json.dumps(mapping(buff))
+# print(geo_j)
+
+

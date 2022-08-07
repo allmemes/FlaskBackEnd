@@ -1,8 +1,12 @@
-from flask import Flask, jsonify, request
+from flask import Flask, request
 from flask_cors import CORS, cross_origin
 import sqlite3
 import os
 import json
+import pandas as pd
+import csvprocessing as cp
+import geometry_tools as gt
+from shapely.geometry import mapping
 
 
 app = Flask(__name__)
@@ -43,7 +47,7 @@ def connectAndUpload(DBpath, tableList):
                 initialData[i] = {}
                 for j in data:
                     initialData[i][j[1]] = j[0]
-                # {name: xxx, table: xxx, geometry: {"type": "Polygon", "coordinates": []}}
+                # {tableName: {name1: geometry1, name2: geometry2}}
     else:
         if not checkMetaDataBase(DBpath):
             # create database if not exist
@@ -88,6 +92,16 @@ def deleteFromDB(DBpath, tableName, dataName):
     except:
         return False
 
+def createBuffedJson(buffDis, csvName, csvDf):
+    df = cp.clean_flight_log(csvName, csvDf)
+    gt.add_points_to_df(df)
+    points = gt.series_to_multipoint(list(df["points"]))
+    sr = gt.find_utm_zone(points[0].y, points[0].x)
+    points = gt.reproject(points, sr)
+    buff = points.buffer(buffDis)
+    buff = gt.reproject(buff, 4326, sr)
+    geo_j = json.dumps(mapping(buff))
+    return geo_j
 
 @app.route('/', methods=["GET", "POST"])
 def index():
@@ -117,6 +131,36 @@ def delete(table, dataName):
     else:
         return ({"status": 204})
 
+@app.route('/buffer', methods=["GET", "POST"])
+def buffer():
+    if request.method == "POST":
+        # obtain buffer distance list.
+        bufferList = request.form['bufferText'].split(",")
+        bufferIndex = 0
+
+        # obtain csv data.
+        for i in request.files:
+            data = request.files.get(i)
+
+            # 1, obtain csv name, buffer distance, and dataframe
+            csvName = i + bufferList[bufferIndex]
+            bufferDistance = float(bufferList[bufferIndex])
+            csvDf = pd.read_csv(data)
+
+            # 2, Ben's algorithm to create geojson.
+            print(createBuffedJson(bufferDistance, csvName, csvDf))
+
+            # 3, If not exist, add into database, otherwise return what realdy exists.
+
+
+            # 4, Pack into json and send to front end.
+
+
+            bufferIndex += 1
+
+        return ({"table shape": 200})
+
+    return ("This is a buffer page")
 
 if __name__ == '__main__':
     app.run()
