@@ -6,7 +6,6 @@ import json
 import pandas as pd
 import csvprocessing as cp
 import geometry_tools as gt
-from shapely.geometry import mapping
 
 
 app = Flask(__name__)
@@ -92,16 +91,45 @@ def deleteFromDB(DBpath, tableName, dataName):
     except:
         return False
 
-def createBuffedJson(buffDis, csvName, csvDf):
-    df = cp.clean_flight_log(csvName, csvDf)
-    gt.add_points_to_df(df)
-    points = gt.series_to_multipoint(list(df["points"]))
+# sniffer drone data
+def createSnifferBuff(buffDis, df):
+    points = gt.series_to_multipoint(df["points"])
+    global sr
     sr = gt.find_utm_zone(points[0].y, points[0].x)
     points = gt.reproject(points, sr)
     buff = points.buffer(buffDis)
     buff = gt.reproject(buff, 4326, sr)
-    geo_j = json.dumps(mapping(buff))
+    geo_j = gt.shapely_to_geojson(buff)
     return geo_j
+
+def createSnifferPeaks(buffDis, df):
+    cp.find_ch4_peaks(df)
+    peaks = df[df['Peak'] == True]
+    points = gt.series_to_multipoint(peaks["points"])
+    # sr = gt.find_utm_zone(points[0].y, points[0].x)
+    points = gt.reproject(points, sr)
+    buff = points.buffer(buffDis)
+    buff = gt.reproject(buff, 4326, sr)
+    geo_j = gt.shapely_to_geojson(buff)
+    return geo_j
+
+def createSnifferPath(df):
+    path = gt.rdp(df["points"], 0.5)
+    return path
+
+def addSnifferPoints():
+    pass
+
+# inficon data
+def createInficonBuff():
+    pass
+
+def createInficonPath():
+    pass
+
+def addInficonPoints():
+    pass
+
 
 @app.route('/', methods=["GET", "POST"])
 def index():
@@ -138,19 +166,30 @@ def buffer():
         bufferList = request.form['bufferText'].split(",")
         bufferIndex = 0
 
-        # obtain csv data.
+        # obtain csv data and related info.
         for i in request.files:
-            data = request.files.get(i)
-
             # 1, obtain csv name, buffer distance, and dataframe
-            csvName = i + bufferList[bufferIndex]
+            csvName = i
             bufferDistance = float(bufferList[bufferIndex])
-            csvDf = pd.read_csv(data)
+            data = request.files.get(i)
+            if len(csvName.split("_")) == 3:
+                # 2, SnifferDrone: Ben's algorithm to create geojson.
+                csvDf = pd.read_csv(data)
+                df = cp.clean_flight_log(csvName, csvDf)
+                gt.add_points_to_df(df)
+                print(createSnifferBuff(bufferDistance, df))
+                print(createSnifferPeaks(bufferDistance, df))
 
-            # 2, Ben's algorithm to create geojson.
-            print(createBuffedJson(bufferDistance, csvName, csvDf))
 
-            # 3, If not exist, add into database, otherwise return what realdy exists.
+            else:
+                # 2, Inficon: Ben's algorithm to create geojson.
+                while data.readline().decode() != '\r\n':
+                    pass
+                csvDf = pd.read_csv(data)
+                print(csvDf)
+
+
+            # 3, If not exist, add into database based on types, otherwise return what realdy exists.
 
 
             # 4, Pack into json and send to front end.

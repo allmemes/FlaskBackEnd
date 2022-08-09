@@ -1,0 +1,13 @@
+{
+  "UTM Zone": 16,
+  "Time Zone": "EST",
+  "Project Name": "test",
+  "List of Layers and types": [
+    ["https://tiles.arcgis.com/tiles/QUg4M9ZDNdUHdQcy/arcgis/rest/services/202206_Arbor_Hills_SnifferDRONE_CH4_Change/MapServer", "type1"],
+    ["https://tiles.arcgis.com/tiles/QUg4M9ZDNdUHdQcy/arcgis/rest/services/202206_Arbor_Hills_SnifferDRONE_CH4_Interpolation/MapServer", "type2"],
+    ["https://tiles.arcgis.com/tiles/QUg4M9ZDNdUHdQcy/arcgis/rest/services/202205_Arbor_Hills_SnifferDRONE_CH4_Change/MapServer", "type3"]
+  ],
+  "Inspection Type": "unknown",
+  "Default Buffer Radius": 15,
+  "dataBasePath": "/Users/apple/Desktop/python/internship/web_vue/web_viewer_back/web_app_db.sqlite"
+}
