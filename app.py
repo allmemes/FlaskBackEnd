@@ -4,6 +4,7 @@ import sqlite3
 import os
 import json
 import pandas as pd
+import numpy as np
 import csvprocessing as cp
 import geometry_tools as gt
 
@@ -14,6 +15,9 @@ app.config["APPLICATION_ROOT"] = "/"
 app.config.from_object(__name__)
 CORS(app, resources={r"/*":{'origins':'http://localhost:8080', "allow_headers":"Access-Control-Allow-Origin"}})
 
+
+# table names
+sqliteTableList = ["PointsTable", "BuffersTable", "LinesTable", "PeaksTable"]
 
 # back end functions
 def checkMetaDataBase(DBpath):
@@ -91,6 +95,10 @@ def deleteFromDB(DBpath, tableName, dataName):
     except:
         return False
 
+def insertIntoDB(DBcursor, tableName, dataName, geometry):
+    insert_code = '''INSERT INTO {tableName} VALUES (?, ?)'''.format(tableName = tableName)
+    DBcursor.execute(insert_code, [geometry, dataName])
+
 # sniffer drone data
 def createSnifferBuff(buffDis, df):
     points = gt.series_to_multipoint(df["points"])
@@ -99,23 +107,27 @@ def createSnifferBuff(buffDis, df):
     points = gt.reproject(points, sr)
     buff = points.buffer(buffDis)
     buff = gt.reproject(buff, 4326, sr)
-    geo_j = gt.shapely_to_geojson(buff)
+    geo_j = gt.shapely_to_geojson(buff).replace('"', "'")
     return geo_j
 
 def createSnifferPeaks(buffDis, df):
     cp.find_ch4_peaks(df)
     peaks = df[df['Peak'] == True]
+    if len(peaks) == 0:
+        return None
     points = gt.series_to_multipoint(peaks["points"])
     # sr = gt.find_utm_zone(points[0].y, points[0].x)
     points = gt.reproject(points, sr)
     buff = points.buffer(buffDis)
     buff = gt.reproject(buff, 4326, sr)
-    geo_j = gt.shapely_to_geojson(buff)
+    geo_j = gt.shapely_to_geojson(buff).replace('"', "'")
     return geo_j
 
 def createSnifferPath(df):
-    path = gt.rdp(df["points"], 0.5)
-    return path
+    points = np.array([[i.x, i.y] for i in df["points"]])
+    lineDict = {'type': 'LineString'}
+    lineDict['coordinates'] = gt.rdp(points, 0.0001)
+    return str(lineDict)
 
 def addSnifferPoints():
     pass
@@ -147,7 +159,6 @@ def accessDB():
                 f.write(json.dumps(allDBpaths, indent=4))
         global localPath
         localPath = request.json["DBpath"]
-        sqliteTableList = ["PointsTable", "BuffersTable", "LinesTable", "PeaksTable"]
         return connectAndUpload(localPath, sqliteTableList)
     return ("Test")
 
@@ -160,12 +171,17 @@ def delete(table, dataName):
         return ({"status": 204})
 
 @app.route('/buffer', methods=["GET", "POST"])
+@cross_origin()
 def buffer():
     if request.method == "POST":
         # obtain buffer distance list.
         bufferList = request.form['bufferText'].split(",")
         bufferIndex = 0
-
+        # prepare json for front end
+        returnedJson = {"BuffersTable": {}, "LinesTable": {}, "PeaksTable": {}}
+        # connect to database
+        connection = sqlite3.connect(localPath)
+        cursor = connection.cursor()
         # obtain csv data and related info.
         for i in request.files:
             # 1, obtain csv name, buffer distance, and dataframe
@@ -177,9 +193,19 @@ def buffer():
                 csvDf = pd.read_csv(data)
                 df = cp.clean_flight_log(csvName, csvDf)
                 gt.add_points_to_df(df)
-                print(createSnifferBuff(bufferDistance, df))
-                print(createSnifferPeaks(bufferDistance, df))
+                # 3, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
+                buffJson = createSnifferBuff(bufferDistance, df)
+                insertIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson)
+                returnedJson["BuffersTable"][csvName+"-buffer"] = buffJson
 
+                peakJson = createSnifferPeaks(bufferDistance, df)
+                if peakJson:
+                    insertIntoDB(cursor, "PeaksTable", csvName+"-peaks", peakJson)
+                returnedJson["PeaksTable"][csvName+"-peaks"] = peakJson
+
+                pathJson = createSnifferPath(df)
+                insertIntoDB(cursor, "LinesTable", csvName+"-path", pathJson)
+                returnedJson["LinesTable"][csvName+"-path"] = pathJson
 
             else:
                 # 2, Inficon: Ben's algorithm to create geojson.
@@ -188,16 +214,14 @@ def buffer():
                 csvDf = pd.read_csv(data)
                 print(csvDf)
 
+                # 3, If not exist, add into database based on types, otherwise return what realdy exists.
 
-            # 3, If not exist, add into database based on types, otherwise return what realdy exists.
-
-
-            # 4, Pack into json and send to front end.
-
+                # 4, Pack into json and send to front end.
 
             bufferIndex += 1
+            connection.commit()
 
-        return ({"table shape": 200})
+        return (returnedJson)
 
     return ("This is a buffer page")
 
