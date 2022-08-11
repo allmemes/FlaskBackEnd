@@ -1,3 +1,4 @@
+import array
 import sqlite3
 import app
 import pandas as pd
@@ -44,22 +45,20 @@ import time
 # max_idx = np.argmax(dist_point_to_line)
 # max_value = dist_point_to_line[max_idx]
 
-start = time.time()
-testDf = pd.read_csv("/Users/apple/Desktop/python/internship/web_vue/web_viewer_back/data/snifferdrone/N1_15_2.8_20220620_153056.csv")
-df = cp.clean_flight_log("test_small", testDf)
-gt.add_points_to_df(df)
+# start = time.time()
+file = open("/Users/apple/Desktop/python/internship/web_vue/web_viewer_back/data/inficon/92003059_20220718_1935_IRW0081.csv")
+while file.readline() != '\n':
+    pass
+csvDf = pd.read_csv(file)
+df = cp.cleanInficon(csvDf)
+gt.add_points_to_df(df, "Long", "Lat")
+print(app.createPath(df, "Long", "Lat"))
 
-
-# points = gt.series_to_multipoint(list(df["points"]))
-# sr = gt.find_utm_zone(points[0].y, points[0].x)
-# points = gt.reproject(points, sr)
-# buff = points.buffer(15.0)
-# buff = gt.reproject(buff, 4326, sr)
-# geo_j = json.dumps(mapping(buff)).replace('"', "'")
-
-
-end = time.time()
-print(end - start)
+# start = time.time()
+# points2 = df[["Long", "Lat"]].to_numpy()
+# print(points2)
+# end = time.time()
+# print(end - start)
 
 # connection = sqlite3.connect("/Users/apple/Desktop/python/internship/web_vue/web_viewer_back/web_app_db.sqlite")
 # cursor = connection.cursor()
@@ -68,3 +67,11 @@ print(end - start)
 
 # a = ''' {"f":[1,2,3]}'''
 # print(a[:4] + a[4:])
+
+
+# def try1():
+#     global a
+#     a = 3
+#     print(a)
+
+# try1()

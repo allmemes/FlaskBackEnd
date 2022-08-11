@@ -99,8 +99,8 @@ def insertIntoDB(DBcursor, tableName, dataName, geometry):
     insert_code = '''INSERT INTO {tableName} VALUES (?, ?)'''.format(tableName = tableName)
     DBcursor.execute(insert_code, [geometry, dataName])
 
-# sniffer drone data
-def createSnifferBuff(buffDis, df):
+# functions to create json.
+def createBuff(buffDis, df):
     points = gt.series_to_multipoint(df["points"])
     global sr
     sr = gt.find_utm_zone(points[0].y, points[0].x)
@@ -110,7 +110,15 @@ def createSnifferBuff(buffDis, df):
     geo_j = gt.shapely_to_geojson(buff).replace('"', "'")
     return geo_j
 
+def createPath(df, longColumnName, latColumnName):
+    points = df[[longColumnName, latColumnName]].to_numpy()
+    lineDict = {'type': 'LineString'}
+    lineDict['coordinates'] = gt.rdp(points, 0.0001)
+    return str(lineDict)
+
+# sniffer drone data
 def createSnifferPeaks(buffDis, df):
+    # return None
     cp.find_ch4_peaks(df)
     peaks = df[df['Peak'] == True]
     if len(peaks) == 0:
@@ -123,22 +131,10 @@ def createSnifferPeaks(buffDis, df):
     geo_j = gt.shapely_to_geojson(buff).replace('"', "'")
     return geo_j
 
-def createSnifferPath(df):
-    points = np.array([[i.x, i.y] for i in df["points"]])
-    lineDict = {'type': 'LineString'}
-    lineDict['coordinates'] = gt.rdp(points, 0.0001)
-    return str(lineDict)
-
 def addSnifferPoints():
     pass
 
 # inficon data
-def createInficonBuff():
-    pass
-
-def createInficonPath():
-    pass
-
 def addInficonPoints():
     pass
 
@@ -191,10 +187,10 @@ def buffer():
             if len(csvName.split("_")) == 3:
                 # 2, SnifferDrone: Ben's algorithm to create geojson.
                 csvDf = pd.read_csv(data)
-                df = cp.clean_flight_log(csvName, csvDf)
-                gt.add_points_to_df(df)
+                df = cp.clean_flight_log(csvDf)
+                gt.add_points_to_df(df, "SenseLong", "SenseLat")
                 # 3, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
-                buffJson = createSnifferBuff(bufferDistance, df)
+                buffJson = createBuff(bufferDistance, df)
                 insertIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson)
                 returnedJson["BuffersTable"][csvName+"-buffer"] = buffJson
 
@@ -203,7 +199,7 @@ def buffer():
                     insertIntoDB(cursor, "PeaksTable", csvName+"-peaks", peakJson)
                 returnedJson["PeaksTable"][csvName+"-peaks"] = peakJson
 
-                pathJson = createSnifferPath(df)
+                pathJson = createPath(df, "SenseLong", "SenseLat")
                 insertIntoDB(cursor, "LinesTable", csvName+"-path", pathJson)
                 returnedJson["LinesTable"][csvName+"-path"] = pathJson
 
@@ -212,15 +208,16 @@ def buffer():
                 while data.readline().decode() != '\r\n':
                     pass
                 csvDf = pd.read_csv(data)
-                print(csvDf)
-
-                # 3, If not exist, add into database based on types, otherwise return what realdy exists.
-
-                # 4, Pack into json and send to front end.
+                df = cp.cleanInficon(csvDf)
+                gt.add_points_to_df(df, "Long", "Lat")
+                # 3, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
+                pathJson = createPath(df, "Long", "Lat")
+                insertIntoDB(cursor, "LinesTable", csvName+"-path", pathJson)
+                returnedJson["LinesTable"][csvName+"-path"] = pathJson
 
             bufferIndex += 1
-            connection.commit()
 
+        connection.commit()
         return (returnedJson)
 
     return ("This is a buffer page")
