@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 import csvprocessing as cp
 import geometry_tools as gt
-
+from shapely.geometry import MultiPoint
 
 app = Flask(__name__)
 app.config["DEBUG"] = True
@@ -100,11 +100,7 @@ def insertIntoDB(DBcursor, tableName, dataName, geometry):
     DBcursor.execute(insert_code, [geometry, dataName])
 
 # functions to create json.
-def createBuff(buffDis, df):
-    points = gt.series_to_multipoint(df["points"])
-    global sr
-    sr = gt.find_utm_zone(points[0].y, points[0].x)
-    points = gt.reproject(points, sr)
+def createBuff(points, buffDis, sr):
     buff = points.buffer(buffDis)
     buff = gt.reproject(buff, 4326, sr)
     geo_j = gt.shapely_to_geojson(buff).replace('"', "'")
@@ -117,16 +113,17 @@ def createPath(df, longColumnName, latColumnName):
     return str(lineDict)
 
 # sniffer drone data
-def createSnifferPeaks(buffDis, df):
+def createSnifferPeaks(points, buffDis, sr, df):
     # return None
     cp.find_ch4_peaks(df)
     peaks = df[df['Peak'] == True]
     if len(peaks) == 0:
         return None
-    points = gt.series_to_multipoint(peaks["points"])
-    # sr = gt.find_utm_zone(points[0].y, points[0].x)
-    points = gt.reproject(points, sr)
-    buff = points.buffer(buffDis)
+    peakList = []
+    for i in peaks.index:
+        peakList.append((points[i].x, points[i].y))
+    peakPoints = MultiPoint(peakList)
+    buff = peakPoints.buffer(buffDis)
     buff = gt.reproject(buff, 4326, sr)
     geo_j = gt.shapely_to_geojson(buff).replace('"', "'")
     return geo_j
@@ -189,12 +186,16 @@ def buffer():
                 csvDf = pd.read_csv(data)
                 df = cp.clean_flight_log(csvDf)
                 gt.add_points_to_df(df, "SenseLong", "SenseLat")
+                points = gt.series_to_multipoint(df["points"])
+                sr = gt.find_utm_zone(points[0].y, points[0].x)
+                points = gt.reproject(points, sr)
+
                 # 3, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
-                buffJson = createBuff(bufferDistance, df)
+                buffJson = createBuff(points, bufferDistance, sr)
                 insertIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson)
                 returnedJson["BuffersTable"][csvName+"-buffer"] = buffJson
 
-                peakJson = createSnifferPeaks(bufferDistance, df)
+                peakJson = createSnifferPeaks(points, bufferDistance, sr, df)
                 if peakJson:
                     insertIntoDB(cursor, "PeaksTable", csvName+"-peaks", peakJson)
                 returnedJson["PeaksTable"][csvName+"-peaks"] = peakJson
@@ -210,7 +211,15 @@ def buffer():
                 csvDf = pd.read_csv(data)
                 df = cp.cleanInficon(csvDf)
                 gt.add_points_to_df(df, "Long", "Lat")
+                points = gt.series_to_multipoint(df["points"])
+                sr = gt.find_utm_zone(points[0].y, points[0].x)
+                points = gt.reproject(points, sr)
+
                 # 3, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
+                buffJson = createBuff(points, bufferDistance, sr)
+                insertIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson)
+                returnedJson["BuffersTable"][csvName+"-buffer"] = buffJson
+
                 pathJson = createPath(df, "Long", "Lat")
                 insertIntoDB(cursor, "LinesTable", csvName+"-path", pathJson)
                 returnedJson["LinesTable"][csvName+"-path"] = pathJson
@@ -224,26 +233,3 @@ def buffer():
 
 if __name__ == '__main__':
     app.run()
-
-    # print(deleteFromDB("/Users/apple/Desktop/python/internship/web_vue/web_viewer_back/web_app_db.sqlite", "BuffersTable", "buffer_polygon_test"))
-
-    # if not os.path.exists('MetaDataBase.json'):
-    #     allDBpaths = {"paths": []}
-    #     with open('MetaDataBase.json', 'w') as f:
-    #         f.write(json.dumps(allDBpaths, indent=4))
-    # print(connectAndUpload("/Users/apple/Desktop/python/internship/web_vue/web_viewer_back/web_app_db.sqlite", ["PointsTable", "BuffersTable", "LinesTable", "PeaksTable"]))
-
-    # some sqlite code for testing:
-    # INSERT INTO BuffersTable
-    # VALUES ("{'type': 'Polygon', 'coordinates': [[[-83.56849193572998, 42.39554091720936], [-83.55626106262207, 42.39344912341609], [-83.55681896209717, 42.397727717992005], [-83.56849193572998, 42.39554091720936]]]}", "buffer_polygon_test")
-
-    # INSERT INTO BuffersTable
-    # VALUES ("{'type': 'Polygon', 'coordinates': [[[-83.54278564453125,42.39848832648868],[-83.54570388793944,42.39024791005226],[-83.53274345397949,42.39176929913866],[-83.53008270263672,42.39810802339276],[-83.53763580322266,42.3958261564156],[-83.54278564453125,42.39848832648868]]]}", "buffer_polygon_test_2")
-
-    # INSERT INTO BuffersTable
-    # VALUES ("{'type': 'LineString', 'coordinates': [[-83.55939388275146, 42.41135388972042], [-83.5478925704956, 42.411132092017496], [-83.54308605194092, 42.40634740777102], [-83.54304313659667, 42.40102362155978]]}", "line_test")
-
-    # buffer_polygon_test_2
-    # {'type': 'Polygon', 'coordinates': [[[-83.54278564453125,42.39848832648868],[-83.54570388793944,42.39024791005226],[-83.53274345397949,42.39176929913866],[-83.53008270263672,42.39810802339276],[-83.53763580322266,42.3958261564156],[-83.54278564453125,42.39848832648868]]]}
-    # line_test
-    # {'type': 'LineString', 'coordinates': [[-83.55939388275146, 42.41135388972042], [-83.5478925704956, 42.411132092017496], [-83.54308605194092, 42.40634740777102], [-83.54304313659667, 42.40102362155978]]}

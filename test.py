@@ -6,7 +6,7 @@ import numpy as np
 import csvprocessing as cp
 import geometry_tools as gt
 import json
-from shapely.geometry import mapping
+from shapely.geometry import mapping, MultiPoint
 import re
 import time
 
@@ -50,9 +50,37 @@ file = open("/Users/apple/Desktop/python/internship/web_vue/web_viewer_back/data
 while file.readline() != '\n':
     pass
 csvDf = pd.read_csv(file)
+file.close()
 df = cp.cleanInficon(csvDf)
 gt.add_points_to_df(df, "Long", "Lat")
-print(app.createPath(df, "Long", "Lat"))
+points = gt.series_to_multipoint(df["points"])
+sr = gt.find_utm_zone(points[0].y, points[0].x)
+points = gt.reproject(points, sr)
+print(app.createBuff(points, 15, sr))
+
+# csvDf = pd.read_csv("/Users/apple/Desktop/python/internship/web_vue/web_viewer_back/data/snifferdrone/N1_15_2.8_20220620_153056.csv")
+# df = cp.clean_flight_log(csvDf)
+# gt.add_points_to_df(df, "SenseLong", "SenseLat")
+# points = gt.series_to_multipoint(df["points"])
+# sr = gt.find_utm_zone(points[0].y, points[0].x)
+# points = gt.reproject(points, sr)
+
+# cp.find_ch4_peaks(df)
+# peaks = df[df['Peak'] == True]
+# print(len(peaks))
+# points = gt.series_to_multipoint(peaks["points"])
+# sr = gt.find_utm_zone(points[0].y, points[0].x)
+# points = gt.reproject(points, sr)
+
+# print(peaks.index)
+# peakList = []
+# for i in peaks.index:
+#     peakList.append((points[i].x, points[i].y))
+# MultiPoint(peakList)
+# print(MultiPoint([(i.y, i.x) for i in ]))
+# points[850, 2685]
+
+
 
 # start = time.time()
 # points2 = df[["Long", "Lat"]].to_numpy()
