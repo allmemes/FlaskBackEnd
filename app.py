@@ -18,8 +18,9 @@ CORS(app, resources={r"/*":{'origins':'http://localhost:8080', "allow_headers":"
 
 # table names
 sqliteTableList = ["PointsTable", "BuffersTable", "LinesTable", "PeaksTable"]
+bufferResolution = 6
 
-# back end functions
+# basic database related functions
 def checkMetaDataBase(DBpath):
     with open('MetaDataBase.json', 'r') as f:
         mataDataBase = json.load(f)
@@ -60,7 +61,7 @@ def connectAndUpload(DBpath, tableList):
                 if i == 0:
                     create_table = '''\
                         CREATE TABLE IF NOT EXISTS {tableName} (
-                        "Microsec" INTEGER PRIMARY KEY UNIQUE,
+                        "Microsec" INTEGER,
                         "Flight_date" TEXT,
                         "Senselong" REAL NOT NULL,
                         "Senselat" REAL NOT NULL,
@@ -95,45 +96,41 @@ def deleteFromDB(DBpath, tableName, dataName):
     except:
         return False
 
-def insertIntoDB(DBcursor, tableName, dataName, geometry):
+# function to add Json into DB
+def insertGeoJsonIntoDB(DBcursor, tableName, dataName, geometry):
     insert_code = '''INSERT INTO {tableName} VALUES (?, ?)'''.format(tableName = tableName)
     DBcursor.execute(insert_code, [geometry, dataName])
 
-# functions to create json.
+# functions to create buffer and path json.
 def createBuff(points, buffDis, sr):
-    buff = points.buffer(buffDis)
+    buff = points.buffer(buffDis, resolution=bufferResolution)
     buff = gt.reproject(buff, 4326, sr)
     geo_j = gt.shapely_to_geojson(buff).replace('"', "'")
     return geo_j
 
-def createPath(df, longColumnName, latColumnName):
-    points = df[[longColumnName, latColumnName]].to_numpy()
+def createPath(df):
+    points = df[["SenseLong", "SenseLat"]].to_numpy()
     lineDict = {'type': 'LineString'}
     lineDict['coordinates'] = gt.rdp(points, 0.0001)
     return str(lineDict)
 
-# sniffer drone data
-def createSnifferPeaks(points, buffDis, sr, df):
-    # return None
+# sniffer drone peaks creating function
+def createSnifferPeaks(points, buffDis, sr, df, conn):
     cp.find_ch4_peaks(df)
-    peaks = df[df['Peak'] == True]
+    # insert points into point table
+    df[["Microsec", "Flight_Date", "SenseLong", "SenseLat", "CH4", "Peak", "Source_Name"]].to_sql(name="PointsTable", con=conn, if_exists='append', index=False)
+    # continue creating the json
+    peaks = df[df['Peak'] == 1]
     if len(peaks) == 0:
         return None
     peakList = []
     for i in peaks.index:
         peakList.append((points[i].x, points[i].y))
     peakPoints = MultiPoint(peakList)
-    buff = peakPoints.buffer(buffDis)
+    buff = peakPoints.buffer(buffDis, resolution=bufferResolution)
     buff = gt.reproject(buff, 4326, sr)
     geo_j = gt.shapely_to_geojson(buff).replace('"', "'")
     return geo_j
-
-def addSnifferPoints():
-    pass
-
-# inficon data
-def addInficonPoints():
-    pass
 
 
 @app.route('/', methods=["GET", "POST"])
@@ -158,6 +155,8 @@ def accessDB():
 @app.route('/delete/<table>/<dataName>', methods=["DELETE"])
 @cross_origin()
 def delete(table, dataName):
+    if table[0] == "B":
+        deleteFromDB(localPath, "PointsTable", dataName)
     if deleteFromDB(localPath, table, dataName):
         return ({"status": 200})
     else:
@@ -184,24 +183,28 @@ def buffer():
             if len(csvName.split("_")) == 3:
                 # 2, SnifferDrone: Ben's algorithm to create geojson.
                 csvDf = pd.read_csv(data)
-                df = cp.clean_flight_log(csvDf)
-                gt.add_points_to_df(df, "SenseLong", "SenseLat")
-                points = gt.series_to_multipoint(df["points"])
+                cleanedDf = cp.clean_flight_log(csvName+"-buffer", csvDf)
+
+                # add a column of points
+                gt.add_points_to_df(cleanedDf)
+                points = gt.series_to_multipoint(cleanedDf["points"])
+                # pre project the points to prepare for buffer.
                 sr = gt.find_utm_zone(points[0].y, points[0].x)
                 points = gt.reproject(points, sr)
 
                 # 3, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
                 buffJson = createBuff(points, bufferDistance, sr)
-                insertIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson)
+                insertGeoJsonIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson)
                 returnedJson["BuffersTable"][csvName+"-buffer"] = buffJson
 
-                peakJson = createSnifferPeaks(points, bufferDistance, sr, df)
+                # while creating peaks, also insert points into point table.
+                peakJson = createSnifferPeaks(points, bufferDistance, sr, cleanedDf, connection)
                 if peakJson:
-                    insertIntoDB(cursor, "PeaksTable", csvName+"-peaks", peakJson)
+                    insertGeoJsonIntoDB(cursor, "PeaksTable", csvName+"-peaks", peakJson)
                 returnedJson["PeaksTable"][csvName+"-peaks"] = peakJson
 
-                pathJson = createPath(df, "SenseLong", "SenseLat")
-                insertIntoDB(cursor, "LinesTable", csvName+"-path", pathJson)
+                pathJson = createPath(cleanedDf)
+                insertGeoJsonIntoDB(cursor, "LinesTable", csvName+"-path", pathJson)
                 returnedJson["LinesTable"][csvName+"-path"] = pathJson
 
             else:
@@ -209,19 +212,25 @@ def buffer():
                 while data.readline().decode() != '\r\n':
                     pass
                 csvDf = pd.read_csv(data)
-                df = cp.cleanInficon(csvDf)
-                gt.add_points_to_df(df, "Long", "Lat")
-                points = gt.series_to_multipoint(df["points"])
+                cleanedDf = cp.cleanInficon(csvName+"-buffer", csvDf)
+
+                # 3, add points into points table.
+                cleanedDf.to_sql(name="PointsTable", con=connection, if_exists='append', index=False)
+
+                # add a column of points
+                gt.add_points_to_df(cleanedDf)
+                points = gt.series_to_multipoint(cleanedDf["points"])
+                # pre project the points to prepare for buffer.
                 sr = gt.find_utm_zone(points[0].y, points[0].x)
                 points = gt.reproject(points, sr)
 
-                # 3, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
+                # 4, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
                 buffJson = createBuff(points, bufferDistance, sr)
-                insertIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson)
+                insertGeoJsonIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson)
                 returnedJson["BuffersTable"][csvName+"-buffer"] = buffJson
 
-                pathJson = createPath(df, "Long", "Lat")
-                insertIntoDB(cursor, "LinesTable", csvName+"-path", pathJson)
+                pathJson = createPath(cleanedDf)
+                insertGeoJsonIntoDB(cursor, "LinesTable", csvName+"-path", pathJson)
                 returnedJson["LinesTable"][csvName+"-path"] = pathJson
 
             bufferIndex += 1
@@ -230,6 +239,7 @@ def buffer():
         return (returnedJson)
 
     return ("This is a buffer page")
+
 
 if __name__ == '__main__':
     app.run()

@@ -87,14 +87,14 @@ def reproject(geom, dest_cs, source_cs=4326):
     return g2
 
 
-def add_points_to_df(df, longColumnName, latColumnName, colname="points"):
+def add_points_to_df(df, colname="points"):
     """
     Convert coordinates to shapely.geometry.Point and add to pandas dataframe
     :param df: pandas dataframe
     :param colname: name of new column with Points
     :return:
     """
-    df[colname] = df.apply(lambda r: Point(r[longColumnName], r[latColumnName]), axis=1)
+    df[colname] = df.apply(lambda r: Point(r["SenseLong"], r["SenseLat"]), axis=1)
 
 
 def series_to_multipoint(s):
