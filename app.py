@@ -168,6 +168,7 @@ def buffer():
     if request.method == "POST":
         # obtain buffer distance list.
         bufferList = request.form['bufferText'].split(",")
+        insepctionType = bufferList[-1]
         bufferIndex = 0
         # prepare json for front end
         returnedJson = {"BuffersTable": {}, "LinesTable": {}, "PeaksTable": {}}
@@ -180,7 +181,7 @@ def buffer():
             csvName = i
             bufferDistance = float(bufferList[bufferIndex])
             data = request.files.get(i)
-            if len(csvName.split("_")) == 3:
+            if insepctionType == "S":
                 # 2, SnifferDrone: Ben's algorithm to create geojson.
                 csvDf = pd.read_csv(data)
                 cleanedDf = cp.clean_flight_log(csvName+"-buffer", csvDf)
