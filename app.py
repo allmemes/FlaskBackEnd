@@ -7,7 +7,10 @@ import pandas as pd
 import numpy as np
 import csvprocessing as cp
 import geometry_tools as gt
-from shapely.geometry import MultiPoint
+from shapely.geometry import MultiPoint, mapping
+import urllib
+import urllib.request
+import collections
 
 app = Flask(__name__)
 app.config["DEBUG"] = True
@@ -67,7 +70,9 @@ def connectAndUpload(DBpath, tableList):
                         "Senselat" REAL NOT NULL,
                         "CH4" INTEGER,
                         "Peak" INTEGER,
-                        "Source_name" TEXT NOT NULL
+                        "Source_name" TEXT NOT NULL,
+                        "Utmlong" REAL NOT NULL,
+                        "Utmlat" REAL NOT NULL
                         )\
                         '''.format(tableName = j)
                     cursor.execute(create_table)
@@ -75,7 +80,8 @@ def connectAndUpload(DBpath, tableList):
                     create_table = '''\
                     CREATE TABLE IF NOT EXISTS {tableName} (
                         "Geometry" TEXT,
-                        "Source_name" TEXT
+                        "Source_name" TEXT,
+                        "EsriGeometry" TEXT
                     )\
                     '''.format(tableName = j)
                     cursor.execute(create_table)
@@ -97,16 +103,31 @@ def deleteFromDB(DBpath, tableName, dataName):
         return False
 
 # function to add Json into DB
-def insertGeoJsonIntoDB(DBcursor, tableName, dataName, geometry):
-    insert_code = '''INSERT INTO {tableName} VALUES (?, ?)'''.format(tableName = tableName)
-    DBcursor.execute(insert_code, [geometry, dataName])
+def insertGeoJsonIntoDB(DBcursor, tableName, dataName, geometry, esriGeo):
+    insert_code = '''INSERT INTO {tableName} VALUES (?, ?, ?)'''.format(tableName = tableName)
+    DBcursor.execute(insert_code, [geometry, dataName, esriGeo])
+
+# convert geojson into esri geometry.
+def toEsriGeometry(geoJson):
+    esriGeometry = {'rings': []}
+    if len(geoJson["coordinates"]) > 1:
+        for i in geoJson["coordinates"]:
+            esriGeometry['rings'].append(i[0])
+    else:
+        for i in geoJson["coordinates"]:
+            esriGeometry['rings'].append(i)
+    return json.dumps(esriGeometry)
 
 # functions to create buffer and path json.
 def createBuff(points, buffDis, sr):
     buff = points.buffer(buffDis, resolution=bufferResolution)
+    # create esriJson
+    rawJson = mapping(buff)
+    esriJson = toEsriGeometry(rawJson).replace('"', "'")
+    # create geoJson
     buff = gt.reproject(buff, 4326, sr)
     geo_j = gt.shapely_to_geojson(buff).replace('"', "'")
-    return geo_j
+    return geo_j, esriJson
 
 def createPath(df):
     points = df[["SenseLong", "SenseLat"]].to_numpy()
@@ -117,9 +138,12 @@ def createPath(df):
 # sniffer drone peaks creating function
 def createSnifferPeaks(points, buffDis, sr, df, conn):
     cp.find_ch4_peaks(df)
-    # insert points into point table
+    # 1, add utmlong and utmlat colums.
+
+    # 2, make the new df into sql
     df[["Microsec", "Flight_Date", "SenseLong", "SenseLat", "CH4", "Peak", "Source_Name"]].to_sql(name="PointsTable", con=conn, if_exists='append', index=False)
-    # continue creating the json
+
+    # 3, filter peaks
     peaks = df[df['Peak'] == 1]
     if len(peaks) == 0:
         return None
@@ -127,7 +151,14 @@ def createSnifferPeaks(points, buffDis, sr, df, conn):
     for i in peaks.index:
         peakList.append((points[i].x, points[i].y))
     peakPoints = MultiPoint(peakList)
+
+    # 4, buffer twice 13 + 5.
     buff = peakPoints.buffer(buffDis, resolution=bufferResolution)
+
+    # 5, create esri rings may need to updat toesrigeometry function to combine two separate buffers.
+
+
+    # 6, create geojson, the front end can use the outer buffer only for viewing purpose.
     buff = gt.reproject(buff, 4326, sr)
     geo_j = gt.shapely_to_geojson(buff).replace('"', "'")
     return geo_j
@@ -166,7 +197,7 @@ def delete(table, dataName):
 @cross_origin()
 def buffer():
     if request.method == "POST":
-        # obtain buffer distance list.
+        # obtain buffer distance list, and inspection type.
         bufferList = request.form['bufferText'].split(",")
         insepctionType = bufferList[-1]
         bufferIndex = 0
@@ -195,17 +226,17 @@ def buffer():
 
                 # 3, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
                 buffJson = createBuff(points, bufferDistance, sr)
-                insertGeoJsonIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson)
-                returnedJson["BuffersTable"][csvName+"-buffer"] = buffJson
+                insertGeoJsonIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson[0], buffJson[1])
+                returnedJson["BuffersTable"][csvName+"-buffer"] = buffJson[0]
 
                 # while creating peaks, also insert points into point table.
-                peakJson = createSnifferPeaks(points, bufferDistance, sr, cleanedDf, connection)
-                if peakJson:
-                    insertGeoJsonIntoDB(cursor, "PeaksTable", csvName+"-peaks", peakJson)
-                returnedJson["PeaksTable"][csvName+"-peaks"] = peakJson
+                # peakJson = createSnifferPeaks(points, bufferDistance, sr, cleanedDf, connection)
+                # if peakJson:
+                #     insertGeoJsonIntoDB(cursor, "PeaksTable", csvName+"-peaks", peakJson)
+                # returnedJson["PeaksTable"][csvName+"-peaks"] = peakJson
 
                 pathJson = createPath(cleanedDf)
-                insertGeoJsonIntoDB(cursor, "LinesTable", csvName+"-path", pathJson)
+                insertGeoJsonIntoDB(cursor, "LinesTable", csvName+"-path", pathJson, "")
                 returnedJson["LinesTable"][csvName+"-path"] = pathJson
 
             else:
@@ -227,11 +258,11 @@ def buffer():
 
                 # 4, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
                 buffJson = createBuff(points, bufferDistance, sr)
-                insertGeoJsonIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson)
-                returnedJson["BuffersTable"][csvName+"-buffer"] = buffJson
+                insertGeoJsonIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson[0], buffJson[1])
+                returnedJson["BuffersTable"][csvName+"-buffer"] = buffJson[0]
 
                 pathJson = createPath(cleanedDf)
-                insertGeoJsonIntoDB(cursor, "LinesTable", csvName+"-path", pathJson)
+                insertGeoJsonIntoDB(cursor, "LinesTable", csvName+"-path", pathJson, "")
                 returnedJson["LinesTable"][csvName+"-path"] = pathJson
 
             bufferIndex += 1
