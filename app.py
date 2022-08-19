@@ -12,18 +12,28 @@ import urllib
 import urllib.request
 import collections
 
+
+################
+# Flask set up #
+################
+
 app = Flask(__name__)
 app.config["DEBUG"] = True
 app.config["APPLICATION_ROOT"] = "/"
 app.config.from_object(__name__)
 CORS(app, resources={r"/*":{'origins':'http://localhost:8080', "allow_headers":"Access-Control-Allow-Origin"}})
 
+####################
+# Global variables #
+####################
 
-# table names
 sqliteTableList = ["PointsTable", "BuffersTable", "LinesTable", "PeaksTable"]
 bufferResolution = 6
 
-# basic database related functions
+####################################
+# basic database related functions #
+####################################
+
 def checkMetaDataBase(DBpath):
     with open('MetaDataBase.json', 'r') as f:
         mataDataBase = json.load(f)
@@ -102,12 +112,15 @@ def deleteFromDB(DBpath, tableName, dataName):
     except:
         return False
 
-# function to add Json into DB
 def insertGeoJsonIntoDB(DBcursor, tableName, dataName, geometry, esriGeo):
     insert_code = '''INSERT INTO {tableName} VALUES (?, ?, ?)'''.format(tableName = tableName)
     DBcursor.execute(insert_code, [geometry, dataName, esriGeo])
 
-# convert geojson into esri geometry.
+##############################################
+# functions to handle geojson and conversion #
+##############################################
+
+# convert geojson into esri geometry for polygons only.
 def toEsriGeometry(geoJson):
     esriGeometry = {'rings': []}
     if len(geoJson["coordinates"]) > 1:
@@ -136,13 +149,13 @@ def createPath(df):
     return str(lineDict)
 
 # sniffer drone peaks creating function
-def createSnifferPeaks(points, buffDis, sr, df, conn):
+def createSnifferPeaks(points, sr, df, conn):
     cp.find_ch4_peaks(df)
     # 1, add utmlong and utmlat colums.
-
+    df["Utmlong"] = [i.x for i in points]
+    df["Utmlat"] = [i.y for i in points]
     # 2, make the new df into sql
-    df[["Microsec", "Flight_Date", "SenseLong", "SenseLat", "CH4", "Peak", "Source_Name"]].to_sql(name="PointsTable", con=conn, if_exists='append', index=False)
-
+    df[["Microsec", "Flight_Date", "SenseLong", "SenseLat", "CH4", "Peak", "Source_Name", "Utmlong", "Utmlat"]].to_sql(name="PointsTable", con=conn, if_exists='append', index=False)
     # 3, filter peaks
     peaks = df[df['Peak'] == 1]
     if len(peaks) == 0:
@@ -151,18 +164,15 @@ def createSnifferPeaks(points, buffDis, sr, df, conn):
     for i in peaks.index:
         peakList.append((points[i].x, points[i].y))
     peakPoints = MultiPoint(peakList)
-
-    # 4, buffer twice 13 + 5.
-    buff = peakPoints.buffer(buffDis, resolution=bufferResolution)
-
-    # 5, create esri rings may need to updat toesrigeometry function to combine two separate buffers.
-
-
-    # 6, create geojson, the front end can use the outer buffer only for viewing purpose.
+    # 4, create bufer geojson.
+    buff = peakPoints.buffer(13.58, resolution=bufferResolution)
     buff = gt.reproject(buff, 4326, sr)
     geo_j = gt.shapely_to_geojson(buff).replace('"', "'")
     return geo_j
 
+##################################
+# communicate with the front end #
+##################################
 
 @app.route('/', methods=["GET", "POST"])
 def index():
@@ -217,23 +227,23 @@ def buffer():
                 csvDf = pd.read_csv(data)
                 cleanedDf = cp.clean_flight_log(csvName+"-buffer", csvDf)
 
-                # add a column of points
+                # 3, add a column of points
                 gt.add_points_to_df(cleanedDf)
                 points = gt.series_to_multipoint(cleanedDf["points"])
-                # pre project the points to prepare for buffer.
+                # 4, pre project the points to prepare for buffer.
                 sr = gt.find_utm_zone(points[0].y, points[0].x)
                 points = gt.reproject(points, sr)
 
-                # 3, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
+                # 5, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
                 buffJson = createBuff(points, bufferDistance, sr)
                 insertGeoJsonIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson[0], buffJson[1])
                 returnedJson["BuffersTable"][csvName+"-buffer"] = buffJson[0]
 
                 # while creating peaks, also insert points into point table.
-                # peakJson = createSnifferPeaks(points, bufferDistance, sr, cleanedDf, connection)
-                # if peakJson:
-                #     insertGeoJsonIntoDB(cursor, "PeaksTable", csvName+"-peaks", peakJson)
-                # returnedJson["PeaksTable"][csvName+"-peaks"] = peakJson
+                peakJson = createSnifferPeaks(points, sr, cleanedDf, connection)
+                if peakJson:
+                    insertGeoJsonIntoDB(cursor, "PeaksTable", csvName+"-peaks", peakJson, "")
+                returnedJson["PeaksTable"][csvName+"-peaks"] = peakJson
 
                 pathJson = createPath(cleanedDf)
                 insertGeoJsonIntoDB(cursor, "LinesTable", csvName+"-path", pathJson, "")
@@ -246,17 +256,21 @@ def buffer():
                 csvDf = pd.read_csv(data)
                 cleanedDf = cp.cleanInficon(csvName+"-buffer", csvDf)
 
-                # 3, add points into points table.
-                cleanedDf.to_sql(name="PointsTable", con=connection, if_exists='append', index=False)
-
-                # add a column of points
+                # 3, add a column of points
                 gt.add_points_to_df(cleanedDf)
                 points = gt.series_to_multipoint(cleanedDf["points"])
-                # pre project the points to prepare for buffer.
+                # 4, pre project the points to prepare for buffer.
                 sr = gt.find_utm_zone(points[0].y, points[0].x)
                 points = gt.reproject(points, sr)
 
-                # 4, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
+                # 5, add utm points into points table.
+                cleanedDf["Utmlong"] = [i.x for i in points]
+                cleanedDf["Utmlat"] = [i.y for i in points]
+
+                # 6, make the new df into sql
+                cleanedDf[["Microsec", "Flight_Date", "SenseLong", "SenseLat", "CH4", "Peak", "Source_Name", "Utmlong", "Utmlat"]].to_sql(name="PointsTable", con=connection, if_exists='append', index=False)
+
+                # 7, add into database based on types and load onto json. name: csvName-buffer, csvName-peaks.....
                 buffJson = createBuff(points, bufferDistance, sr)
                 insertGeoJsonIntoDB(cursor, "BuffersTable", csvName+"-buffer", buffJson[0], buffJson[1])
                 returnedJson["BuffersTable"][csvName+"-buffer"] = buffJson[0]
@@ -271,6 +285,11 @@ def buffer():
         return (returnedJson)
 
     return ("This is a buffer page")
+
+@app.route('/append', methods=["GET", "POST"])
+@cross_origin()
+def append():
+    pass
 
 
 if __name__ == '__main__':
