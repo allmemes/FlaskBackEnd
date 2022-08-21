@@ -154,7 +154,7 @@ def createSnifferPeaks(points, sr, df, conn):
     # 1, add utmlong and utmlat colums.
     df["Utmlong"] = [i.x for i in points]
     df["Utmlat"] = [i.y for i in points]
-    # 2, make the new df into sql
+    # 2, add the new df into sqlite point table
     df[["Microsec", "Flight_Date", "SenseLong", "SenseLat", "CH4", "Peak", "Source_Name", "Utmlong", "Utmlat"]].to_sql(name="PointsTable", con=conn, if_exists='append', index=False)
     # 3, filter peaks
     peaks = df[df['Peak'] == 1]
@@ -169,6 +169,42 @@ def createSnifferPeaks(points, sr, df, conn):
     buff = gt.reproject(buff, 4326, sr)
     geo_j = gt.shapely_to_geojson(buff).replace('"', "'")
     return geo_j
+
+#############################
+# Arcgis rest api functions #
+#############################
+
+def get_token(userName, passWord):
+    referer = "http://www.arcgis.com/"
+    query_dict = {'username': userName, 'password': passWord,
+                    'referer': referer, 'expiration': 900}
+    query_string = urllib.parse.urlencode(query_dict).encode('utf-8')
+    url = "https://www.arcgis.com/sharing/rest/generateToken"
+    token = json.loads(urllib.request.urlopen(url + "?f=json", query_string).read())
+
+    if "token" not in token:
+        print(token['error'])
+        return None
+    else:
+        return token["token"]
+
+def add_feature(token, features, targetUrl):
+    query_dict = {"f": "json",
+                    "token": token,
+                    "features": features
+                    }
+    jsonResponse = urllib.request.urlopen(targetUrl + r"/addFeatures", urllib.parse.urlencode(query_dict).encode('utf-8'))
+    jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
+    print (jsonOutput['addResults'])
+
+def delete_all(token, targetUrl):
+    delete_dict = {"f": "json",
+                    "token": token,
+                    "where": "OBJECTID >= 0"
+                    }
+    jsonResponse = urllib.request.urlopen(targetUrl + r"/deleteFeatures", urllib.parse.urlencode(delete_dict).encode('utf-8'))
+    jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
+    return jsonOutput
 
 ##################################
 # communicate with the front end #
@@ -196,7 +232,7 @@ def accessDB():
 @app.route('/delete/<table>/<dataName>', methods=["DELETE"])
 @cross_origin()
 def delete(table, dataName):
-    if table[0] == "B":
+    if table[0] == "L":
         deleteFromDB(localPath, "PointsTable", dataName)
     if deleteFromDB(localPath, table, dataName):
         return ({"status": 200})
@@ -209,7 +245,7 @@ def buffer():
     if request.method == "POST":
         # obtain buffer distance list, and inspection type.
         bufferList = request.form['bufferText'].split(",")
-        insepctionType = bufferList[-1]
+        insepctionType = request.form['task']
         bufferIndex = 0
         # prepare json for front end
         returnedJson = {"BuffersTable": {}, "LinesTable": {}, "PeaksTable": {}}
@@ -225,7 +261,7 @@ def buffer():
             if insepctionType == "S":
                 # 2, SnifferDrone: Ben's algorithm to create geojson.
                 csvDf = pd.read_csv(data)
-                cleanedDf = cp.clean_flight_log(csvName+"-buffer", csvDf)
+                cleanedDf = cp.clean_flight_log(csvName+"-path", csvDf)
 
                 # 3, add a column of points
                 gt.add_points_to_df(cleanedDf)
@@ -289,7 +325,83 @@ def buffer():
 @app.route('/append', methods=["GET", "POST"])
 @cross_origin()
 def append():
-    pass
+    if request.method == "POST":
+        # start the database.
+        connection = sqlite3.connect(localPath)
+        cursor = connection.cursor()
+
+        # authentication
+        userName = request.form["userName"]
+        passWord = request.form["passWord"]
+        token = get_token(userName, passWord)
+
+        # get append function information
+        sourceLayers = request.form["sourceLayers"].split(",")
+        inspectionType = request.form["task"]
+
+        # prepare point and buffer feature list for appending, two inspections have both those two feature types.
+        pointFeatures, bufferFeatures = [], []
+
+        # append operation based on inspection type
+        if inspectionType == "S":
+            peaksFeatures = []
+            bufferUrl = request.form["bufferUrl"]
+            peaksUrl = request.form["peaksUrl"]
+            pointsUrl = request.form["pointsUrl"]
+
+            for i in sourceLayers:
+                if i[-1] == "r":
+                    query = cursor.execute("SELECT EsriGeometry from BuffersTable where Source_name == '" + i + "'").fetchall()[0][0]
+                    esriGeometry = json.loads(query.replace("'", '"'))
+                    uploadStruct = {
+                        "attributes" : {},
+                        "geometry" : esriGeometry
+                    }
+                    bufferFeatures.append(uploadStruct)
+
+                elif i[-1] == "s":
+                    pass
+                else:
+                    pass
+
+            if len(peaksFeatures) > 0:
+                pass
+
+            # Multiprocess add.
+            add_feature(token, bufferFeatures, bufferUrl)
+
+        else:
+            inficonPointsUrl = request.form["inficonPoints"]
+            inficonBufferUrl = request.form["inficonBuffer"]
+
+            for i in sourceLayers:
+                if i[-1] == "r":
+                    pass
+                else:
+                    pass
+
+        return ({"sourceLayer": request.form["sourceLayers"]})
+
+    return ("This is for appending function")
+
+@app.route('/reset', methods=["GET", "POST"])
+@cross_origin()
+def reset():
+    if request.method == "POST":
+        userName = request.form["userName"]
+        passWord = request.form["passWord"]
+        token = get_token(userName, passWord)
+        inspectionType = request.form["task"]
+        if inspectionType == "S":
+            bufferUrl = request.form["bufferUrl"]
+            peaksUrl = request.form["peaksUrl"]
+            pointsUrl = request.form["pointsUrl"]
+            # Multiprocess delete
+            delete_all(token, bufferUrl)
+        else:
+            inficonPointsUrl = request.form["inficonPoints"]
+            inficonBufferUrl = request.form["inficonBuffer"]
+            # Multiprocess delete
 
 
 if __name__ == '__main__':
