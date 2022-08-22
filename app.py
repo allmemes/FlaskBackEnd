@@ -11,6 +11,7 @@ from shapely.geometry import MultiPoint, mapping
 import urllib
 import urllib.request
 import collections
+import multiprocessing as mp
 
 
 ################
@@ -193,18 +194,18 @@ def add_feature(token, features, targetUrl):
                     "token": token,
                     "features": features
                     }
-    jsonResponse = urllib.request.urlopen(targetUrl + r"/addFeatures", urllib.parse.urlencode(query_dict).encode('utf-8'))
-    jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
-    print (jsonOutput['addResults'])
+    urllib.request.urlopen(targetUrl + r"/addFeatures", urllib.parse.urlencode(query_dict).encode('utf-8'))
+    # jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
+    # print (jsonOutput['addResults'])
 
 def delete_all(token, targetUrl):
     delete_dict = {"f": "json",
                     "token": token,
                     "where": "OBJECTID >= 0"
                     }
-    jsonResponse = urllib.request.urlopen(targetUrl + r"/deleteFeatures", urllib.parse.urlencode(delete_dict).encode('utf-8'))
-    jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
-    return jsonOutput
+    urllib.request.urlopen(targetUrl + r"/deleteFeatures", urllib.parse.urlencode(delete_dict).encode('utf-8'))
+    # jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
+    # print (jsonOutput['addResults'])
 
 ##################################
 # communicate with the front end #
@@ -351,7 +352,7 @@ def append():
 
             for i in sourceLayers:
                 if i[-1] == "r":
-                    query = cursor.execute("SELECT EsriGeometry from BuffersTable where Source_name == '" + i + "'").fetchall()[0][0]
+                    query = cursor.execute("SELECT EsriGeometry FROM BuffersTable WHERE Source_name == '" + i + "'").fetchall()[0][0]
                     esriGeometry = json.loads(query.replace("'", '"'))
                     uploadStruct = {
                         "attributes" : {},
@@ -361,14 +362,37 @@ def append():
 
                 elif i[-1] == "s":
                     pass
-                else:
-                    pass
 
-            if len(peaksFeatures) > 0:
-                pass
+                else:
+                    query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + i + "'").fetchall()
+                    for i in query:
+                        esriPoint = {"attributes" : {
+                                        "Flight_Date": i[0],
+                                        "SenseLat": i[1],
+                                        "SenseLong": i[2],
+                                        "CH4": i[3],
+                                        "Source_Name" : i[4].split("-")[0]
+                                        },
+                                        "geometry" :
+                                        {
+                                            "x" : i[5],
+                                            "y" : i[6]
+                                        }}
+                        pointFeatures.append(esriPoint)
 
             # Multiprocess add.
-            add_feature(token, bufferFeatures, bufferUrl)
+            # add_feature(token, bufferFeatures, bufferUrl)
+            bufferAppend = mp.Process(target=add_feature, args=[token, bufferFeatures, bufferUrl])
+            # add_feature(token, pointFeatures, pointsUrl)
+            pointsAppend = mp.Process(target=add_feature, args=[token, pointFeatures, pointsUrl])
+            # add_feature(token, pointFeatures, pointsUrl)
+            # peaksAppend = mp.Process(target=add_feature, args=[token, peaksFeatures, peaksUrl])
+            bufferAppend.start()
+            pointsAppend.start()
+            # peaksAppend.start()
+            bufferAppend.join()
+            pointsAppend.join()
+            # peaksAppend.join()
 
         else:
             inficonPointsUrl = request.form["inficonPoints"]
