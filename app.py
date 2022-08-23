@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 import csvprocessing as cp
 import geometry_tools as gt
-from shapely.geometry import MultiPoint, mapping
+from shapely.geometry import MultiPoint, mapping, Point
 import urllib
 import urllib.request
 import collections
@@ -166,7 +166,7 @@ def createSnifferPeaks(points, sr, df, conn):
         peakList.append((points[i].x, points[i].y))
     peakPoints = MultiPoint(peakList)
     # 4, create bufer geojson.
-    buff = peakPoints.buffer(13.58, resolution=bufferResolution)
+    buff = peakPoints.buffer(13.57884, resolution=bufferResolution)
     buff = gt.reproject(buff, 4326, sr)
     geo_j = gt.shapely_to_geojson(buff).replace('"', "'")
     return geo_j
@@ -190,22 +190,23 @@ def get_token(userName, passWord):
         return token["token"]
 
 def add_feature(token, features, targetUrl):
-    query_dict = {"f": "json",
+    appending_dict = {"f": "json",
                     "token": token,
                     "features": features
                     }
-    urllib.request.urlopen(targetUrl + r"/addFeatures", urllib.parse.urlencode(query_dict).encode('utf-8'))
+    urllib.request.urlopen(targetUrl + r"/addFeatures", urllib.parse.urlencode(appending_dict).encode('utf-8'))
     # jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
     # print (jsonOutput['addResults'])
 
-def delete_all(token, targetUrl):
-    delete_dict = {"f": "json",
-                    "token": token,
-                    "where": "OBJECTID >= 0"
-                    }
-    urllib.request.urlopen(targetUrl + r"/deleteFeatures", urllib.parse.urlencode(delete_dict).encode('utf-8'))
-    # jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
-    # print (jsonOutput['addResults'])
+def query_feature(token, sql, targetUrl):
+    # sql = "Source_Name = 'N1_15_2.8_20220620_153056.csv'"
+    query_dict = {"f": "json", "token": token, "where": sql}
+    jsonResponse = urllib.request.urlopen(targetUrl + r"/query", urllib.parse.urlencode(query_dict).encode('utf-8'))
+    jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
+    if len(jsonOutput["features"]) > 0:
+        return True
+    else:
+        return False
 
 ##################################
 # communicate with the front end #
@@ -340,6 +341,9 @@ def append():
         sourceLayers = request.form["sourceLayers"].split(",")
         inspectionType = request.form["task"]
 
+        # create return reponse
+        returnJson = {"success": [], "fail": []}
+
         # prepare point and buffer feature list for appending, two inspections have both those two feature types.
         pointFeatures, bufferFeatures = [], []
 
@@ -352,33 +356,76 @@ def append():
 
             for i in sourceLayers:
                 if i[-1] == "r":
-                    query = cursor.execute("SELECT EsriGeometry FROM BuffersTable WHERE Source_name == '" + i + "'").fetchall()[0][0]
-                    esriGeometry = json.loads(query.replace("'", '"'))
-                    uploadStruct = {
-                        "attributes" : {},
-                        "geometry" : esriGeometry
-                    }
-                    bufferFeatures.append(uploadStruct)
+                    sql = "Source_Name = '" + i.split("-")[0] + "'"
+                    if not query_feature(token, sql, bufferUrl):
+                        query = cursor.execute("SELECT Source_name, EsriGeometry FROM BuffersTable WHERE Source_name == '" + i + "'").fetchall()[0]
+                        esriGeometry = json.loads(query[1].replace("'", '"'))
+                        uploadStruct = {
+                            "attributes" : {"Source_Name": query[0].split("-")[0]},
+                            "geometry" : esriGeometry
+                        }
+                        bufferFeatures.append(uploadStruct)
+                        returnJson["success"].append(i)
 
                 elif i[-1] == "s":
-                    pass
+                    sql = "Source_Name = '" + i.split("-")[0] + "'"
+                    if not query_feature(token, sql, peaksUrl):
+                        sourceName = i.replace("peaks", "path")
+                        orig_id = 1
+                        query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + sourceName + "' AND Peak == 1").fetchall()
+                        for i in query:
+                            # obtain center coordinate
+                            peakCenter = Point(i[5], i[6])
+                            # create outer buffer esri geometry json.
+                            outerCircle = {"attributes" : {
+                                "Flight_Date": i[0],
+                                "SenseLat": i[1],
+                                "SenseLong": i[2],
+                                "CH4": i[3],
+                                "Source_Name" : i[4].split("-")[0],
+                                "BUFF_DIST": 13.57884,
+                                "ORIG_FID": orig_id
+                            }}
+                            outerBuffer = mapping(peakCenter.buffer(13.57884, resolution=bufferResolution))
+                            esriOuterBuffer = json.loads(toEsriGeometry(outerBuffer))
+                            outerCircle["geometry"] = esriOuterBuffer
+                            peaksFeatures.append(outerCircle)
+                            # create inner buffer esri geometry json.
+                            innerCircle = {"attributes" : {
+                                "Flight_Date": i[0],
+                                "SenseLat": i[1],
+                                "SenseLong": i[2],
+                                "CH4": i[3],
+                                "Source_Name" : i[4].split("-")[0],
+                                "BUFF_DIST": 5.876544,
+                                "ORIG_FID": orig_id
+                            }}
+                            innerBuffer = mapping(peakCenter.buffer(5.876544, resolution=bufferResolution))
+                            esriInnerBuffer = json.loads(toEsriGeometry(innerBuffer))
+                            innerCircle["geometry"] = esriInnerBuffer
+                            peaksFeatures.append(innerCircle)
+                            orig_id += 1
+                        returnJson["success"].append(i)
 
                 else:
-                    query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + i + "'").fetchall()
-                    for i in query:
-                        esriPoint = {"attributes" : {
-                                        "Flight_Date": i[0],
-                                        "SenseLat": i[1],
-                                        "SenseLong": i[2],
-                                        "CH4": i[3],
-                                        "Source_Name" : i[4].split("-")[0]
-                                        },
-                                        "geometry" :
-                                        {
-                                            "x" : i[5],
-                                            "y" : i[6]
-                                        }}
-                        pointFeatures.append(esriPoint)
+                    sql = "Source_Name = '" + i.split("-")[0] + "'"
+                    if not query_feature(token, sql, pointsUrl):
+                        query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + i + "'").fetchall()
+                        for i in query:
+                            esriPoint = {"attributes" : {
+                                            "Flight_Date": i[0],
+                                            "SenseLat": i[1],
+                                            "SenseLong": i[2],
+                                            "CH4": i[3],
+                                            "Source_Name" : i[4].split("-")[0]
+                                            },
+                                            "geometry" :
+                                            {
+                                                "x" : i[5],
+                                                "y" : i[6]
+                                            }}
+                            pointFeatures.append(esriPoint)
+                        returnJson["success"].append(i)
 
             # Multiprocess add.
             # add_feature(token, bufferFeatures, bufferUrl)
@@ -386,13 +433,13 @@ def append():
             # add_feature(token, pointFeatures, pointsUrl)
             pointsAppend = mp.Process(target=add_feature, args=[token, pointFeatures, pointsUrl])
             # add_feature(token, pointFeatures, pointsUrl)
-            # peaksAppend = mp.Process(target=add_feature, args=[token, peaksFeatures, peaksUrl])
+            peaksAppend = mp.Process(target=add_feature, args=[token, peaksFeatures, peaksUrl])
             bufferAppend.start()
             pointsAppend.start()
-            # peaksAppend.start()
+            peaksAppend.start()
             bufferAppend.join()
             pointsAppend.join()
-            # peaksAppend.join()
+            peaksAppend.join()
 
         else:
             inficonPointsUrl = request.form["inficonPoints"]
@@ -404,29 +451,9 @@ def append():
                 else:
                     pass
 
-        return ({"sourceLayer": request.form["sourceLayers"]})
+        return (returnJson)
 
     return ("This is for appending function")
-
-@app.route('/reset', methods=["GET", "POST"])
-@cross_origin()
-def reset():
-    if request.method == "POST":
-        userName = request.form["userName"]
-        passWord = request.form["passWord"]
-        token = get_token(userName, passWord)
-        inspectionType = request.form["task"]
-        if inspectionType == "S":
-            bufferUrl = request.form["bufferUrl"]
-            peaksUrl = request.form["peaksUrl"]
-            pointsUrl = request.form["pointsUrl"]
-            # Multiprocess delete
-            delete_all(token, bufferUrl)
-        else:
-            inficonPointsUrl = request.form["inficonPoints"]
-            inficonBufferUrl = request.form["inficonBuffer"]
-            # Multiprocess delete
-
 
 if __name__ == '__main__':
     app.run()

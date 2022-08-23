@@ -13,7 +13,7 @@ import urllib
 import urllib.request
 import collections
 import multiprocessing as mp
-from multiprocessing import Pool
+from ctypes import c_char_p
 
 # csvDf = pd.read_csv("/Users/apple/Desktop/python/internship/web_vue/web_viewer_back/data/snifferdrone/N1_15_2.8_20220620_153056.csv")
 # cleanedDf = cp.clean_flight_log("-buffer", csvDf)
@@ -39,6 +39,17 @@ from multiprocessing import Pool
 # geometry = app.toEsriGeometry(geo_j)
 
 # print(geometry)
+
+def delete_all(token, targetUrl):
+    delete_dict = {"f": "json",
+                    "token": token,
+                    "where": "OBJECTID >= 0"
+                    }
+    urllib.request.urlopen(targetUrl + r"/deleteFeatures", urllib.parse.urlencode(delete_dict).encode('utf-8'))
+    # jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
+    # print (jsonOutput['addResults'])
+
+
 def get_token(userName, passWord):
     referer = "http://www.arcgis.com/"
     query_dict = {'username': userName, 'password': passWord,
@@ -54,7 +65,8 @@ def get_token(userName, passWord):
         #print(f"Authenticated as {self.username}")
         return token["token"]
 
-def add_feature(token):
+
+def add_feature(token, returnJson):
     features = [
             {
                 "attributes" : {
@@ -83,37 +95,53 @@ def add_feature(token):
     jsonOutput = json.loads(jsonResponse.read(),
                             object_pairs_hook=collections.OrderedDict)
 
-    print(jsonOutput['addResults'])
+    # returnJson["result"].append(jsonOutput['addResults'])
+    returnJson["result"] = returnJson["result"] + [jsonOutput['addResults']]
 
 
+# returnJson = {"result": []}
+# # 1.8462049961090088
+# start = time.time()
+# token = get_token("hangchen_sniffergis", "Ch970721")
+# add_feature(token, returnJson)
+# add_feature(token, returnJson)
+# add_feature(token, returnJson)
+# end = time.time()
+# print(end - start)
+# print(returnJson)
+
+# 0.7975919246673584
+manager = mp.Manager()
+returnJson = manager.dict()
+returnJson["result"] = []
+start = time.time()
 token = get_token("hangchen_sniffergis", "Ch970721")
-
-# 1.7540669441223145
-# start = time.time()
-# add_feature(token)
-# add_feature(token)
-# add_feature(token)
-# end = time.time()
-# print(end - start)
-
-# 0.6874580383300781
-# start = time.time()
-# p1 = mp.Process(target=add_feature, args = [token])
-# p2 = mp.Process(target=add_feature, args = [token])
-# p3 = mp.Process(target=add_feature, args = [token])
-# p1.start()
-# p2.start()
-# p3.start()
-# p1.join()
-# p2.join()
-# p3.join()
-# end = time.time()
-# print(end - start)
+p1 = mp.Process(target=add_feature, args = [token, returnJson])
+p2 = mp.Process(target=add_feature, args = [token, returnJson])
+p3 = mp.Process(target=add_feature, args = [token, returnJson])
+p1.start()
+p2.start()
+p3.start()
+p1.join()
+p2.join()
+p3.join()
+end = time.time()
+print(end - start)
+print(returnJson)
 
 
-app.delete_all(token, "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_points/FeatureServer/3")
-app.delete_all(token, "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_buffer/FeatureServer/0")
-# app.delete_all(token, "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_points/FeatureServer/3")
+# delete_all(token, "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_points/FeatureServer/3")
+# delete_all(token, "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_buffer/FeatureServer/0")
+# delete_all(token, "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_peaks/FeatureServer/2")
+
+# i = "N1_15_2.8_20220620_153056.csv-buffer"
+# sql = "Source_Name = '" + i.split("-")[0] + "'"
+# # sql = "Source_Name = '" + "N1_15_2.8_20220620_153056.csv" + "'"
+# print(app.query_feature(token, sql, "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_buffer/FeatureServer/0"))
+
+
+
+
 
 # print(geometry)
 # result = [
@@ -273,22 +301,46 @@ app.delete_all(token, "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest
 
 # connection = sqlite3.connect("/Users/apple/Desktop/python/internship/web_vue/web_viewer_back/web_app_db.sqlite")
 # cursor = connection.cursor()
-# a = "N1_15_2.8_20220620_153056.csv-path"
-# query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + a + "'").fetchall()
-# for i in query[:2]:
-#     esriPoint = {"attributes" : {
+# i = "N1_15_2.8_20220620_153056.csv-buffer"
+# query = cursor.execute("SELECT Source_name, EsriGeometry FROM BuffersTable WHERE Source_name == '" + i + "'").fetchall()[0]
+# print(query[0])
+
+
+# a = "N1_15_2.8_20220620_153056.csv-peaks"
+# sourceName = a.replace("peaks", "path")
+# query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + sourceName + "' AND Peak == 1").fetchall()
+# orig_id = 1
+# for i in query:
+#     peakCenter = Point(i[5], i[6])
+#     outerCircle = {"attributes" : {
 #                     "Flight_Date": i[0],
 #                     "SenseLat": i[1],
 #                     "SenseLong": i[2],
 #                     "CH4": i[3],
-#                     "Source_Name" : i[4].split("-")[0]
-#                     },
-#                     "geometry" :
-#                     {
-#                         "x" : i[5],
-#                         "y" : i[6]
+#                     "Source_Name" : i[4].split("-")[0],
+#                     "BUFF_DIST": 13.57884,
+#                     "ORIG_FID": orig_id
 #                     }}
-#     print(esriPoint)
+#     outerBuffer = mapping(peakCenter.buffer(13.57884, resolution=6))
+#     esriOuterBuffer = json.loads(app.toEsriGeometry(outerBuffer))
+#     outerCircle["geometry"] = esriOuterBuffer
+
+#     innerCircle = {"attributes" : {
+#                 "Flight_Date": i[0],
+#                 "SenseLat": i[1],
+#                 "SenseLong": i[2],
+#                 "CH4": i[3],
+#                 "Source_Name" : i[4].split("-")[0],
+#                 "BUFF_DIST": 5.876544,
+#                 "ORIG_FID": orig_id
+#                 }}
+#     innerBuffer = mapping(peakCenter.buffer(5.876544, resolution=6))
+#     esriInnerBuffer = json.loads(app.toEsriGeometry(innerBuffer))
+#     innerCircle["geometry"] = esriInnerBuffer
+
+#     orig_id += 1
+
+#     print(innerCircle, outerCircle)
 
 # esriGeo = json.loads(query.replace("'", '"'))
 
@@ -298,3 +350,27 @@ app.delete_all(token, "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest
 # }
 
 # print(uploadStruct)
+
+
+# def p1(dicta):
+#     # dicta["success"].append("a")
+#     dicta["success"] = dicta["success"] + ["a"]
+
+# def p2(dicta):
+#     # dicta.append("b")
+#     dicta["fail"] = dicta["fail"] + ["b"]
+
+# manager = mp.Manager()
+# a = manager.dict()
+# a["success"] = []
+# a["fail"] = []
+# P1 = mp.Process(target=p1, args=[a])
+# P2 = mp.Process(target=p2, args=[a])
+
+# P1.start()
+# P2.start()
+
+# P1.join()
+# P2.join()
+
+# print(json.dumps(a.copy()))
