@@ -189,14 +189,32 @@ def get_token(userName, passWord):
     else:
         return token["token"]
 
-def add_feature(token, features, targetUrl):
+def add_feature(token, features, targetUrl, urlCheckDict, returnJson):
     appending_dict = {"f": "json",
                     "token": token,
                     "features": features
                     }
-    urllib.request.urlopen(targetUrl + r"/addFeatures", urllib.parse.urlencode(appending_dict).encode('utf-8'))
-    # jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
-    # print (jsonOutput['addResults'])
+    jsonResponse = urllib.request.urlopen(targetUrl + r"/addFeatures", urllib.parse.urlencode(appending_dict).encode('utf-8'))
+    if not urlCheckDict[targetUrl] == "-path":
+        jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
+        if jsonOutput['addResults']:
+            # the entire feature collection json is formated correctly, but may still fail to append.
+            for i,j in enumerate(jsonOutput['addResults']):
+                # recombine the correct layer name: csvname + layer type for the front end: ie: N1_15_2.8_20220620_153056 + "-buffer"
+                layerName = features[i]["attributes"]["Source_Name"] + urlCheckDict[targetUrl]
+                if j['success']:
+                    if urlCheckDict[targetUrl] == "-buffer":
+                        returnJson["bufferSuccess"] += [layerName]
+                    elif urlCheckDict[targetUrl] == "-peaks":
+                        returnJson["peaksSuccess"] += [layerName]
+                else:
+                    if urlCheckDict[targetUrl] == "-buffer":
+                        returnJson["bufferFail"] += [layerName]
+                    elif urlCheckDict[targetUrl] == "-peaks":
+                        returnJson["peaksFail"] += [layerName]
+        else:
+            # the entire feature collection json is not formated correctly. OR EMPTY!!!
+            returnJson["invaidJson"] += [targetUrl]
 
 def query_feature(token, sql, targetUrl):
     # sql = "Source_Name = 'N1_15_2.8_20220620_153056.csv'"
@@ -341,18 +359,31 @@ def append():
         sourceLayers = request.form["sourceLayers"].split(",")
         inspectionType = request.form["task"]
 
-        # create return reponse
-        returnJson = {"success": [], "fail": []}
+        # create return reponse for multiprocess appending.
+        manager = mp.Manager()
+        returnJson = manager.dict()
+        returnJson["task"] = "S"
+        returnJson["pointsAppended"] = []
+        returnJson["bufferSuccess"] = []
+        returnJson["bufferFail"] = []
+        returnJson["peaksSuccess"] = []
+        returnJson["peaksFail"] = []
+        returnJson["invaidJson"] = []
 
         # prepare point and buffer feature list for appending, two inspections have both those two feature types.
         pointFeatures, bufferFeatures = [], []
 
         # append operation based on inspection type
         if inspectionType == "S":
+            # extra peak features collector
             peaksFeatures = []
+            # get urls
             bufferUrl = request.form["bufferUrl"]
             peaksUrl = request.form["peaksUrl"]
             pointsUrl = request.form["pointsUrl"]
+
+            # diction for quickly check what url is the target for what layer.
+            urlDict = {bufferUrl: "-buffer", peaksUrl: "-peaks", pointsUrl: "-path"}
 
             for i in sourceLayers:
                 if i[-1] == "r":
@@ -365,7 +396,6 @@ def append():
                             "geometry" : esriGeometry
                         }
                         bufferFeatures.append(uploadStruct)
-                        returnJson["success"].append(i)
 
                 elif i[-1] == "s":
                     sql = "Source_Name = '" + i.split("-")[0] + "'"
@@ -373,16 +403,16 @@ def append():
                         sourceName = i.replace("peaks", "path")
                         orig_id = 1
                         query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + sourceName + "' AND Peak == 1").fetchall()
-                        for i in query:
+                        for j in query:
                             # obtain center coordinate
-                            peakCenter = Point(i[5], i[6])
+                            peakCenter = Point(j[5], j[6])
                             # create outer buffer esri geometry json.
                             outerCircle = {"attributes" : {
-                                "Flight_Date": i[0],
-                                "SenseLat": i[1],
-                                "SenseLong": i[2],
-                                "CH4": i[3],
-                                "Source_Name" : i[4].split("-")[0],
+                                "Flight_Date": j[0],
+                                "SenseLat": j[1],
+                                "SenseLong": j[2],
+                                "CH4": j[3],
+                                "Source_Name" : j[4].split("-")[0],
                                 "BUFF_DIST": 13.57884,
                                 "ORIG_FID": orig_id
                             }}
@@ -392,11 +422,11 @@ def append():
                             peaksFeatures.append(outerCircle)
                             # create inner buffer esri geometry json.
                             innerCircle = {"attributes" : {
-                                "Flight_Date": i[0],
-                                "SenseLat": i[1],
-                                "SenseLong": i[2],
-                                "CH4": i[3],
-                                "Source_Name" : i[4].split("-")[0],
+                                "Flight_Date": j[0],
+                                "SenseLat": j[1],
+                                "SenseLong": j[2],
+                                "CH4": j[3],
+                                "Source_Name" : j[4].split("-")[0],
                                 "BUFF_DIST": 5.876544,
                                 "ORIG_FID": orig_id
                             }}
@@ -405,35 +435,34 @@ def append():
                             innerCircle["geometry"] = esriInnerBuffer
                             peaksFeatures.append(innerCircle)
                             orig_id += 1
-                        returnJson["success"].append(i)
 
                 else:
                     sql = "Source_Name = '" + i.split("-")[0] + "'"
                     if not query_feature(token, sql, pointsUrl):
                         query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + i + "'").fetchall()
-                        for i in query:
+                        for j in query:
                             esriPoint = {"attributes" : {
-                                            "Flight_Date": i[0],
-                                            "SenseLat": i[1],
-                                            "SenseLong": i[2],
-                                            "CH4": i[3],
-                                            "Source_Name" : i[4].split("-")[0]
+                                            "Flight_Date": j[0],
+                                            "SenseLat": j[1],
+                                            "SenseLong": j[2],
+                                            "CH4": j[3],
+                                            "Source_Name" : j[4].split("-")[0]
                                             },
                                             "geometry" :
                                             {
-                                                "x" : i[5],
-                                                "y" : i[6]
+                                                "x" : j[5],
+                                                "y" : j[6]
                                             }}
                             pointFeatures.append(esriPoint)
-                        returnJson["success"].append(i)
+                        returnJson["pointsAppended"] += [i]
 
-            # Multiprocess add.
+            # Multiprocess add. parameters: token, features, targetUrl, urlCheckDict, returnJson, includeReponse
             # add_feature(token, bufferFeatures, bufferUrl)
-            bufferAppend = mp.Process(target=add_feature, args=[token, bufferFeatures, bufferUrl])
+            bufferAppend = mp.Process(target=add_feature, args=[token, bufferFeatures, bufferUrl, urlDict, returnJson])
             # add_feature(token, pointFeatures, pointsUrl)
-            pointsAppend = mp.Process(target=add_feature, args=[token, pointFeatures, pointsUrl])
-            # add_feature(token, pointFeatures, pointsUrl)
-            peaksAppend = mp.Process(target=add_feature, args=[token, peaksFeatures, peaksUrl])
+            pointsAppend = mp.Process(target=add_feature, args=[token, pointFeatures, pointsUrl, urlDict, returnJson])
+            # add_feature(token, peaksFeatures, peaksUrl)
+            peaksAppend = mp.Process(target=add_feature, args=[token, peaksFeatures, peaksUrl, urlDict, returnJson])
             bufferAppend.start()
             pointsAppend.start()
             peaksAppend.start()
@@ -451,7 +480,7 @@ def append():
                 else:
                     pass
 
-        return (returnJson)
+        return (returnJson.copy())
 
     return ("This is for appending function")
 
