@@ -189,32 +189,61 @@ def get_token(userName, passWord):
     else:
         return token["token"]
 
-def add_feature(token, features, targetUrl, urlCheckDict, returnJson):
+def add_point_features(token, features, targetUrl):
+    appending_dict = {"f": "json",
+                    "token": token,
+                    "features": features
+                    }
+    urllib.request.urlopen(targetUrl + r"/addFeatures", urllib.parse.urlencode(appending_dict).encode('utf-8'))
+
+def add_buffer_features(token, features, targetUrl, returnJson):
     appending_dict = {"f": "json",
                     "token": token,
                     "features": features
                     }
     jsonResponse = urllib.request.urlopen(targetUrl + r"/addFeatures", urllib.parse.urlencode(appending_dict).encode('utf-8'))
-    if not urlCheckDict[targetUrl] == "-path":
-        jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
-        if jsonOutput['addResults']:
-            # the entire feature collection json is formated correctly, but may still fail to append.
-            for i,j in enumerate(jsonOutput['addResults']):
-                # recombine the correct layer name: csvname + layer type for the front end: ie: N1_15_2.8_20220620_153056 + "-buffer"
-                layerName = features[i]["attributes"]["Source_Name"] + urlCheckDict[targetUrl]
-                if j['success']:
-                    if urlCheckDict[targetUrl] == "-buffer":
-                        returnJson["bufferSuccess"] += [layerName]
-                    elif urlCheckDict[targetUrl] == "-peaks":
-                        returnJson["peaksSuccess"] += [layerName]
-                else:
-                    if urlCheckDict[targetUrl] == "-buffer":
-                        returnJson["bufferFail"] += [layerName]
-                    elif urlCheckDict[targetUrl] == "-peaks":
-                        returnJson["peaksFail"] += [layerName]
-        else:
-            # the entire feature collection json is not formated correctly. OR EMPTY!!!
-            returnJson["invaidJson"] += [targetUrl]
+    jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
+    if "error" in jsonOutput.keys():
+        # the entire feature collection json is not formated correctly, not matter whether it is peaks or buffer
+        returnJson["invaidJson"] += ["buffer"]
+    else:
+        for i,j in enumerate(jsonOutput['addResults']):
+            layerName = features[i]["attributes"]["Source_Name"] + "-buffer"
+            if j['success']:
+                returnJson["bufferSuccess"] += [layerName]
+            else:
+                returnJson["bufferFail"] += [layerName]
+
+def add_peak_features(token, features, targetUrl, returnJson, peaksDict):
+    appending_dict = {"f": "json",
+                    "token": token,
+                    "features": features
+                    }
+    jsonResponse = urllib.request.urlopen(targetUrl + r"/addFeatures", urllib.parse.urlencode(appending_dict).encode('utf-8'))
+    jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
+    if "error" in jsonOutput.keys():
+        # the entire feature collection json is not formated correctly, not matter whether it is peaks or buffer
+        returnJson["invaidJson"] += ["peaks"]
+    else:
+        appendIndex = 0
+        skippedIndexNumber = 0
+        while appendIndex < len(jsonOutput['addResults']):
+            result = jsonOutput['addResults'][appendIndex]
+            # recombine the layer name
+            layerName = features[appendIndex]["attributes"]["Source_Name"] + "-peaks"
+            # get the total number of peaks of current appended layers and compare it with the current appendIndex
+            totalPeaksNumber = peaksDict[features[appendIndex]["attributes"]["Source_Name"]]
+            if result["success"]:
+                # if append success and if the current index - previously skipped index + 1 = total peaks number, then add peaks layer name to the returnJson
+                if appendIndex - skippedIndexNumber + 1 == totalPeaksNumber:
+                    returnJson["peaksSuccess"] += [layerName]
+                    skippedIndexNumber += totalPeaksNumber
+                appendIndex += 1
+            else:
+                # if append fail, skip to the index of next layer, the skipping step = old skipped index number + current total peaks number.
+                returnJson["peaksFail"] += [layerName]
+                appendIndex = skippedIndexNumber + totalPeaksNumber
+                skippedIndexNumber += totalPeaksNumber
 
 def query_feature(token, sql, targetUrl):
     # sql = "Source_Name = 'N1_15_2.8_20220620_153056.csv'"
@@ -349,41 +378,37 @@ def append():
         # start the database.
         connection = sqlite3.connect(localPath)
         cursor = connection.cursor()
-
         # authentication
         userName = request.form["userName"]
         passWord = request.form["passWord"]
         token = get_token(userName, passWord)
-
         # get append function information
         sourceLayers = request.form["sourceLayers"].split(",")
         inspectionType = request.form["task"]
-
         # create return reponse for multiprocess appending.
         manager = mp.Manager()
         returnJson = manager.dict()
-        returnJson["task"] = "S"
         returnJson["pointsAppended"] = []
         returnJson["bufferSuccess"] = []
         returnJson["bufferFail"] = []
         returnJson["peaksSuccess"] = []
         returnJson["peaksFail"] = []
-        returnJson["invaidJson"] = []
-
+        returnJson["invalidJson"] = []
         # prepare point and buffer feature list for appending, two inspections have both those two feature types.
         pointFeatures, bufferFeatures = [], []
-
         # append operation based on inspection type
         if inspectionType == "S":
+            returnJson["task"] = "SnifferDrone"
             # extra peak features collector
             peaksFeatures = []
+            # Dictionary to record the number of peaks for each peak layer. This is a work around for
+            # retrieving the peaks appending response. Each row in AGOL layer is an appending
+            # feature. Each peak layer created from one csv contains even number of rows (buffered twice)
+            peaksDict = {}
             # get urls
             bufferUrl = request.form["bufferUrl"]
             peaksUrl = request.form["peaksUrl"]
             pointsUrl = request.form["pointsUrl"]
-
-            # diction for quickly check what url is the target for what layer.
-            urlDict = {bufferUrl: "-buffer", peaksUrl: "-peaks", pointsUrl: "-path"}
 
             for i in sourceLayers:
                 if i[-1] == "r":
@@ -403,6 +428,8 @@ def append():
                         sourceName = i.replace("peaks", "path")
                         orig_id = 1
                         query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + sourceName + "' AND Peak == 1").fetchall()
+                        # record the total number of features appendable to the paak layer.
+                        peaksDict[i.split("-")[0]] = len(query)*2
                         for j in query:
                             # obtain center coordinate
                             peakCenter = Point(j[5], j[6])
@@ -458,11 +485,11 @@ def append():
 
             # Multiprocess add. parameters: token, features, targetUrl, urlCheckDict, returnJson, includeReponse
             # add_feature(token, bufferFeatures, bufferUrl)
-            bufferAppend = mp.Process(target=add_feature, args=[token, bufferFeatures, bufferUrl, urlDict, returnJson])
+            bufferAppend = mp.Process(target=add_buffer_features, args=[token, bufferFeatures, bufferUrl, returnJson])
             # add_feature(token, pointFeatures, pointsUrl)
-            pointsAppend = mp.Process(target=add_feature, args=[token, pointFeatures, pointsUrl, urlDict, returnJson])
+            pointsAppend = mp.Process(target=add_point_features, args=[token, pointFeatures, pointsUrl])
             # add_feature(token, peaksFeatures, peaksUrl)
-            peaksAppend = mp.Process(target=add_feature, args=[token, peaksFeatures, peaksUrl, urlDict, returnJson])
+            peaksAppend = mp.Process(target=add_peak_features, args=[token, peaksFeatures, peaksUrl, returnJson, peaksDict])
             bufferAppend.start()
             pointsAppend.start()
             peaksAppend.start()
@@ -471,6 +498,7 @@ def append():
             peaksAppend.join()
 
         else:
+            returnJson["task"] = "Inficon"
             inficonPointsUrl = request.form["inficonPoints"]
             inficonBufferUrl = request.form["inficonBuffer"]
 
