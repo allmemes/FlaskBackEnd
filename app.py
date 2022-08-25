@@ -274,10 +274,12 @@ def accessDB():
             allDBpaths = {"paths": []}
             with open('MetaDataBase.json', 'w') as f:
                 f.write(json.dumps(allDBpaths, indent=4))
+        path = request.json["DBpath"]
+        # create absolute path from relative path.
         global localPath
-        localPath = request.json["DBpath"]
+        localPath = os.path.abspath(path)
         return connectAndUpload(localPath, sqliteTableList)
-    return ("Test")
+    return ("Connect to database")
 
 @app.route('/delete/<table>/<dataName>', methods=["DELETE"])
 @cross_origin()
