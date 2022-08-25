@@ -124,12 +124,13 @@ def insertGeoJsonIntoDB(DBcursor, tableName, dataName, geometry, esriGeo):
 # convert geojson into esri geometry for polygons only.
 def toEsriGeometry(geoJson):
     esriGeometry = {'rings': []}
-    if len(geoJson["coordinates"]) > 1:
+    if geoJson["type"] == 'Polygon':
         for i in geoJson["coordinates"]:
-            esriGeometry['rings'].append(i[0])
+                esriGeometry['rings'].append(i)
     else:
         for i in geoJson["coordinates"]:
-            esriGeometry['rings'].append(i)
+            for j in i:
+                esriGeometry['rings'].append(j)
     return json.dumps(esriGeometry)
 
 # functions to create buffer and path json.
@@ -205,7 +206,7 @@ def add_buffer_features(token, features, targetUrl, returnJson):
     jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
     if "error" in jsonOutput.keys():
         # the entire feature collection json is not formated correctly, not matter whether it is peaks or buffer
-        returnJson["invaidJson"] += ["buffer"]
+        returnJson["invalidJson"] += ["buffer"]
     else:
         for i,j in enumerate(jsonOutput['addResults']):
             layerName = features[i]["attributes"]["Source_Name"] + "-buffer"
@@ -223,7 +224,7 @@ def add_peak_features(token, features, targetUrl, returnJson, peaksDict):
     jsonOutput = json.loads(jsonResponse.read(), object_pairs_hook=collections.OrderedDict)
     if "error" in jsonOutput.keys():
         # the entire feature collection json is not formated correctly, not matter whether it is peaks or buffer
-        returnJson["invaidJson"] += ["peaks"]
+        returnJson["invalidJson"] += ["peaks"]
     else:
         appendIndex = 0
         skippedIndexNumber = 0
@@ -339,7 +340,7 @@ def buffer():
                 while data.readline().decode() != '\r\n':
                     pass
                 csvDf = pd.read_csv(data)
-                cleanedDf = cp.cleanInficon(csvName+"-buffer", csvDf)
+                cleanedDf = cp.cleanInficon(csvName+"-path", csvDf)
 
                 # 3, add a column of points
                 gt.add_points_to_df(cleanedDf)
@@ -396,6 +397,8 @@ def append():
         returnJson["invalidJson"] = []
         # prepare point and buffer feature list for appending, two inspections have both those two feature types.
         pointFeatures, bufferFeatures = [], []
+        # a bool to check if there is at least one layer that is appendable
+        appendedAtLeastOnce = False
         # append operation based on inspection type
         if inspectionType == "S":
             returnJson["task"] = "SnifferDrone"
@@ -411,91 +414,97 @@ def append():
             pointsUrl = request.form["pointsUrl"]
 
             for i in sourceLayers:
+                sql = "Source_Name = '" + i.split("-")[0] + "'"
                 if i[-1] == "r":
-                    sql = "Source_Name = '" + i.split("-")[0] + "'"
                     if not query_feature(token, sql, bufferUrl):
-                        query = cursor.execute("SELECT Source_name, EsriGeometry FROM BuffersTable WHERE Source_name == '" + i + "'").fetchall()[0]
-                        esriGeometry = json.loads(query[1].replace("'", '"'))
-                        uploadStruct = {
-                            "attributes" : {"Source_Name": query[0].split("-")[0]},
-                            "geometry" : esriGeometry
-                        }
-                        bufferFeatures.append(uploadStruct)
+                        queryOpertaion = cursor.execute("SELECT Source_name, EsriGeometry FROM BuffersTable WHERE Source_name == '" + i + "'").fetchall()
+                        if len(queryOpertaion) > 0:
+                            query = queryOpertaion[0]
+                            esriGeometry = json.loads(query[1].replace("'", '"'))
+                            uploadStruct = {
+                                "attributes" : {"Source_Name": query[0].split("-")[0]},
+                                "geometry" : esriGeometry
+                            }
+                            bufferFeatures.append(uploadStruct)
+                            appendedAtLeastOnce = True
 
                 elif i[-1] == "s":
-                    sql = "Source_Name = '" + i.split("-")[0] + "'"
                     if not query_feature(token, sql, peaksUrl):
                         sourceName = i.replace("peaks", "path")
                         orig_id = 1
-                        query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + sourceName + "' AND Peak == 1").fetchall()
-                        # record the total number of features appendable to the paak layer.
-                        peaksDict[i.split("-")[0]] = len(query)*2
-                        for j in query:
-                            # obtain center coordinate
-                            peakCenter = Point(j[5], j[6])
-                            # create outer buffer esri geometry json.
-                            outerCircle = {"attributes" : {
-                                "Flight_Date": j[0],
-                                "SenseLat": j[1],
-                                "SenseLong": j[2],
-                                "CH4": j[3],
-                                "Source_Name" : j[4].split("-")[0],
-                                "BUFF_DIST": 13.57884,
-                                "ORIG_FID": orig_id
-                            }}
-                            outerBuffer = mapping(peakCenter.buffer(13.57884, resolution=bufferResolution))
-                            esriOuterBuffer = json.loads(toEsriGeometry(outerBuffer))
-                            outerCircle["geometry"] = esriOuterBuffer
-                            peaksFeatures.append(outerCircle)
-                            # create inner buffer esri geometry json.
-                            innerCircle = {"attributes" : {
-                                "Flight_Date": j[0],
-                                "SenseLat": j[1],
-                                "SenseLong": j[2],
-                                "CH4": j[3],
-                                "Source_Name" : j[4].split("-")[0],
-                                "BUFF_DIST": 5.876544,
-                                "ORIG_FID": orig_id
-                            }}
-                            innerBuffer = mapping(peakCenter.buffer(5.876544, resolution=bufferResolution))
-                            esriInnerBuffer = json.loads(toEsriGeometry(innerBuffer))
-                            innerCircle["geometry"] = esriInnerBuffer
-                            peaksFeatures.append(innerCircle)
-                            orig_id += 1
+                        query= cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + sourceName + "' AND Peak == 1").fetchall()
+                        if len(query) > 0:
+                            # record the total number of features appendable to the paak layer.
+                            peaksDict[i.split("-")[0]] = len(query)*2
+                            for j in query:
+                                # obtain center coordinate
+                                peakCenter = Point(j[5], j[6])
+                                # create outer buffer esri geometry json.
+                                outerCircle = {"attributes" : {
+                                    "Flight_Date": j[0],
+                                    "SenseLat": j[1],
+                                    "SenseLong": j[2],
+                                    "CH4": j[3],
+                                    "Source_Name" : j[4].split("-")[0],
+                                    "BUFF_DIST": 13.57884,
+                                    "ORIG_FID": orig_id
+                                }}
+                                outerBuffer = mapping(peakCenter.buffer(13.57884, resolution=bufferResolution))
+                                esriOuterBuffer = json.loads(toEsriGeometry(outerBuffer))
+                                outerCircle["geometry"] = esriOuterBuffer
+                                peaksFeatures.append(outerCircle)
+                                # create inner buffer esri geometry json.
+                                innerCircle = {"attributes" : {
+                                    "Flight_Date": j[0],
+                                    "SenseLat": j[1],
+                                    "SenseLong": j[2],
+                                    "CH4": j[3],
+                                    "Source_Name" : j[4].split("-")[0],
+                                    "BUFF_DIST": 5.876544,
+                                    "ORIG_FID": orig_id
+                                }}
+                                innerBuffer = mapping(peakCenter.buffer(5.876544, resolution=bufferResolution))
+                                esriInnerBuffer = json.loads(toEsriGeometry(innerBuffer))
+                                innerCircle["geometry"] = esriInnerBuffer
+                                peaksFeatures.append(innerCircle)
+                                orig_id += 1
+                            appendedAtLeastOnce = True
 
                 else:
-                    sql = "Source_Name = '" + i.split("-")[0] + "'"
                     if not query_feature(token, sql, pointsUrl):
                         query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + i + "'").fetchall()
-                        for j in query:
-                            esriPoint = {"attributes" : {
-                                            "Flight_Date": j[0],
-                                            "SenseLat": j[1],
-                                            "SenseLong": j[2],
-                                            "CH4": j[3],
-                                            "Source_Name" : j[4].split("-")[0]
-                                            },
-                                            "geometry" :
-                                            {
-                                                "x" : j[5],
-                                                "y" : j[6]
-                                            }}
-                            pointFeatures.append(esriPoint)
-                        returnJson["pointsAppended"] += [i]
+                        if len(query) > 0:
+                            for j in query:
+                                esriPoint = {"attributes" : {
+                                                "Flight_Date": j[0],
+                                                "SenseLat": j[1],
+                                                "SenseLong": j[2],
+                                                "CH4": j[3],
+                                                "Source_Name" : j[4].split("-")[0]
+                                                },
+                                                "geometry" :
+                                                {
+                                                    "x" : j[5],
+                                                    "y" : j[6]
+                                                }}
+                                pointFeatures.append(esriPoint)
+                            returnJson["pointsAppended"] += [i]
+                            appendedAtLeastOnce = True
 
-            # Multiprocess add. parameters: token, features, targetUrl, urlCheckDict, returnJson, includeReponse
-            # add_feature(token, bufferFeatures, bufferUrl)
-            bufferAppend = mp.Process(target=add_buffer_features, args=[token, bufferFeatures, bufferUrl, returnJson])
-            # add_feature(token, pointFeatures, pointsUrl)
-            pointsAppend = mp.Process(target=add_point_features, args=[token, pointFeatures, pointsUrl])
-            # add_feature(token, peaksFeatures, peaksUrl)
-            peaksAppend = mp.Process(target=add_peak_features, args=[token, peaksFeatures, peaksUrl, returnJson, peaksDict])
-            bufferAppend.start()
-            pointsAppend.start()
-            peaksAppend.start()
-            bufferAppend.join()
-            pointsAppend.join()
-            peaksAppend.join()
+            if appendedAtLeastOnce:
+                # Multiprocess add. parameters: token, features, targetUrl, urlCheckDict, returnJson, includeReponse
+                # add_feature(token, bufferFeatures, bufferUrl)
+                bufferAppend = mp.Process(target=add_buffer_features, args=[token, bufferFeatures, bufferUrl, returnJson])
+                # add_feature(token, pointFeatures, pointsUrl)
+                pointsAppend = mp.Process(target=add_point_features, args=[token, pointFeatures, pointsUrl])
+                # add_feature(token, peaksFeatures, peaksUrl)
+                peaksAppend = mp.Process(target=add_peak_features, args=[token, peaksFeatures, peaksUrl, returnJson, peaksDict])
+                bufferAppend.start()
+                pointsAppend.start()
+                peaksAppend.start()
+                bufferAppend.join()
+                pointsAppend.join()
+                peaksAppend.join()
 
         else:
             returnJson["task"] = "Inficon"
@@ -503,10 +512,49 @@ def append():
             inficonBufferUrl = request.form["inficonBuffer"]
 
             for i in sourceLayers:
+                sql = "Source_Name = '" + i.split("-")[0] + "'"
                 if i[-1] == "r":
-                    pass
+                    if not query_feature(token, sql, inficonBufferUrl):
+                        queryOperation = cursor.execute("SELECT Source_name, EsriGeometry FROM BuffersTable WHERE Source_name == '" + i + "'").fetchall()
+                        if len(queryOperation) > 0:
+                            query = queryOperation[0]
+                            esriGeometry = json.loads(query[1].replace("'", '"'))
+                            uploadStruct = {
+                                "attributes" : {"Source_Name": query[0].split("-")[0]},
+                                "geometry" : esriGeometry
+                            }
+                            bufferFeatures.append(uploadStruct)
+                            appendedAtLeastOnce = True
+
                 else:
-                    pass
+                    if not query_feature(token, sql, inficonPointsUrl):
+                        query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + i + "'").fetchall()
+                        if len(query) > 0:
+                            for j in query:
+                                esriPoint = {"attributes" : {
+                                                "Inspection_Date": j[0],
+                                                "Inspection_Time": j[0].split(" ")[1],
+                                                "Lat": j[1],
+                                                "Long": j[2],
+                                                "CH4": j[3],
+                                                "Source_Name" : j[4].split("-")[0]
+                                                },
+                                                "geometry" :
+                                                {
+                                                    "x" : j[5],
+                                                    "y" : j[6]
+                                                }}
+                                pointFeatures.append(esriPoint)
+                            returnJson["pointsAppended"] += [i]
+                            appendedAtLeastOnce = True
+
+            if appendedAtLeastOnce:
+                bufferInficonAppend = mp.Process(target=add_buffer_features, args=[token, bufferFeatures, inficonBufferUrl, returnJson])
+                pointInficonAppend = mp.Process(target=add_point_features, args=[token, pointFeatures, inficonPointsUrl])
+                bufferInficonAppend.start()
+                pointInficonAppend.start()
+                bufferInficonAppend.join()
+                pointInficonAppend.join()
 
         return (returnJson.copy())
 

@@ -107,13 +107,24 @@ def add_feature(token):
 # returnJson = {"result": []}
 # # 1.8462049961090088
 # start = time.time()
-# token = get_token("hangchen_sniffergis", "Ch970721")
+token = get_token("hangchen_sniffergis", "Ch970721")
 # add_feature(token)
 # add_feature(token, returnJson)
 # add_feature(token, returnJson)
 # end = time.time()
 # print(end - start)
 # print(returnJson)
+
+urlList = [
+    "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_points/FeatureServer/3",
+    "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_buffer/FeatureServer/0",
+    "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_peaks/FeatureServer/2",
+    "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/test_inficon/FeatureServer/0",
+    "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/test_inficon_buffer/FeatureServer/8"
+    ]
+
+for i in urlList:
+    delete_all(token, i)
 
 # 0.7975919246673584
 # manager = mp.Manager()
@@ -134,197 +145,6 @@ def add_feature(token):
 # print(end - start)
 # print(returnJson)
 
-
-features = [
-  {
-    "attributes" : {
-      "Flight_Date" : "8/10/2022, 11:25 AM",
-      "SenseLat" : 42.4,
-      "SenseLong" : -83.55,
-      "CH4" : 0,
-      "Source_Name" : "test_Source_Name.csv",
-      "BUFF_DIST": 15,
-      "ORIG_FID": 1
-    },
-    "geometry" :
-    {
-      "rings" : [
-      [
-        [289331.1604, 4697752.6758], 
-        [289333.518345537, 4697752.4695065], 
-        [289335.804646092, 4697751.85689411], 
-        [289337.949833579, 4697750.85657675], 
-        [289339.888727563, 4697749.49894857], 
-        [289341.562415731, 4697747.8252604], 
-        [289342.920043914, 4697745.88636642], 
-        [289343.920361267, 4697743.74117893], 
-        [289344.532973655, 4697741.45487838], 
-        [289344.739267158, 4697739.09693284], 
-        [289344.532973655, 4697736.7389873], 
-        [289343.920361267, 4697734.45268675], 
-        [289342.920043914, 4697732.30749926], 
-        [289341.562415731, 4697730.36860528], 
-        [289339.888727563, 4697728.69491711], 
-        [289337.949833579, 4697727.33728893], 
-        [289335.804646092, 4697726.33697157], 
-        [289333.518345537, 4697725.72435919], 
-        [289331.1604, 4697725.51806568], 
-        [289328.802454464, 4697725.72435919], 
-        [289326.516153909, 4697726.33697157], 
-        [289324.370966421, 4697727.33728893], 
-        [289322.432072438, 4697728.69491711], 
-        [289320.75838427, 4697730.36860528], 
-        [289319.400756087, 4697732.30749926], 
-        [289318.400438733, 4697734.45268675], 
-        [289317.787826346, 4697736.7389873], 
-        [289317.581532842, 4697739.09693284], 
-        [289317.787826346, 4697741.45487838], 
-        [289318.400438733, 4697743.74117893], 
-        [289319.400756087, 4697745.88636642], 
-        [289320.75838427, 4697747.8252604], 
-        [289322.432072438, 4697749.49894857], 
-        [289324.370966421, 4697750.85657675], 
-        [289326.516153909, 4697751.85689411], 
-        [289328.802454464, 4697752.4695065], 
-        [289331.1604, 4697752.6758]
-      ],
-      [
-        [289331.1604, 4697744.9735], 
-        [289332.180853198, 4697744.88422191], 
-        [289333.170300441, 4697744.61910032], 
-        [289334.098677877, 4697744.18619082], 
-        [289334.937777226, 4697743.59864713], 
-        [289335.66210288, 4697742.87432147], 
-        [289336.249646569, 4697742.03522212], 
-        [289336.682556077, 4697741.10684469], 
-        [289336.947677667, 4697740.11739745], 
-        [289337.036955753, 4697739.09694425], 
-        [289336.947677667, 4697738.07649105], 
-        [289336.682556077, 4697737.08704381], 
-        [289336.249646569, 4697736.15866637], 
-        [289335.66210288, 4697735.31956702], 
-        [289334.937777226, 4697734.59524137], 
-        [289334.098677877, 4697734.00769768], 
-        [289333.170300441, 4697733.57478817], 
-        [289332.180853198, 4697733.30966658], 
-        [289331.1604, 4697733.22038849], 
-        [289330.139946803, 4697733.30966658], 
-        [289329.15049956, 4697733.57478817], 
-        [289328.222122124, 4697734.00769768], 
-        [289327.383022775, 4697734.59524137], 
-        [289326.658697121, 4697735.31956702], 
-        [289326.071153432, 4697736.15866637], 
-        [289325.638243924, 4697737.08704381], 
-        [289325.373122334, 4697738.07649105], 
-        [289325.283844247, 4697739.09694425], 
-        [289325.373122334, 4697740.11739745], 
-        [289325.638243924, 4697741.10684469], 
-        [289326.071153432, 4697742.03522212], 
-        [289326.658697121, 4697742.87432147], 
-        [289327.383022775, 4697743.59864713], 
-        [289328.222122124, 4697744.18619082], 
-        [289329.15049956, 4697744.61910032], 
-        [289330.139946803, 4697744.88422191], 
-        [289331.1604, 4697744.9735]
-      ]
-    ]
-  }
-},
-{
-    "attributes" : {
-      "Flight_Date" : "8/10/2022, 11:25 AM",
-      "SenseLat" : 42.4,
-      "SenseLong" : -83.55,
-      "CH4" : 0,
-      "Source_Name" : "test_Source_Name.csv",
-      "BUFF_DIST": 15,
-      "ORIG_FID": 1
-    },
-    "geometry" :
-    {
-      "rings" : [
-      [
-        [289331.1604, 4697752.6758], 
-        [289333.518345537, 4697752.4695065], 
-        [289335.804646092, 4697751.85689411], 
-        [289337.949833579, 4697750.85657675], 
-        [289339.888727563, 4697749.49894857], 
-        [289341.562415731, 4697747.8252604], 
-        [289342.920043914, 4697745.88636642], 
-        [289343.920361267, 4697743.74117893], 
-        [289344.532973655, 4697741.45487838], 
-        [289344.739267158, 4697739.09693284], 
-        [289344.532973655, 4697736.7389873], 
-        [289343.920361267, 4697734.45268675], 
-        [289342.920043914, 4697732.30749926], 
-        [289341.562415731, 4697730.36860528], 
-        [289339.888727563, 4697728.69491711], 
-        [289337.949833579, 4697727.33728893], 
-        [289335.804646092, 4697726.33697157], 
-        [289333.518345537, 4697725.72435919], 
-        [289331.1604, 4697725.51806568], 
-        [289328.802454464, 4697725.72435919], 
-        [289326.516153909, 4697726.33697157], 
-        [289324.370966421, 4697727.33728893], 
-        [289322.432072438, 4697728.69491711], 
-        [289320.75838427, 4697730.36860528], 
-        [289319.400756087, 4697732.30749926], 
-        [289318.400438733, 4697734.45268675], 
-        [289317.787826346, 4697736.7389873], 
-        [289317.581532842, 4697739.09693284], 
-        [289317.787826346, 4697741.45487838], 
-        [289318.400438733, 4697743.74117893], 
-        [289319.400756087, 4697745.88636642], 
-        [289320.75838427, 4697747.8252604], 
-        [289322.432072438, 4697749.49894857], 
-        [289324.370966421, 4697750.85657675], 
-        [289326.516153909, 4697751.85689411], 
-        [289328.802454464, 4697752.4695065], 
-        [289331.1604, 4697752.6758]
-      ],
-      [
-        [289331.1604, 4697744.9735], 
-        [289332.180853198, 4697744.88422191], 
-        [289333.170300441, 4697744.61910032], 
-        [289334.098677877, 4697744.18619082], 
-        [289334.937777226, 4697743.59864713], 
-        [289335.66210288, 4697742.87432147], 
-        [289336.249646569, 4697742.03522212], 
-        [289336.682556077, 4697741.10684469], 
-        [289336.947677667, 4697740.11739745], 
-        [289337.036955753, 4697739.09694425], 
-        [289336.947677667, 4697738.07649105], 
-        [289336.682556077, 4697737.08704381], 
-        [289336.249646569, 4697736.15866637], 
-        [289335.66210288, 4697735.31956702], 
-        [289334.937777226, 4697734.59524137], 
-        [289334.098677877, 4697734.00769768], 
-        [289333.170300441, 4697733.57478817], 
-        [289332.180853198, 4697733.30966658], 
-        [289331.1604, 4697733.22038849], 
-        [289330.139946803, 4697733.30966658], 
-        [289329.15049956, 4697733.57478817], 
-        [289328.222122124, 4697734.00769768], 
-        [289327.383022775, 4697734.59524137], 
-        [289326.658697121, 4697735.31956702], 
-        [289326.071153432, 4697736.15866637], 
-        [289325.638243924, 4697737.08704381], 
-        [289325.373122334, 4697738.07649105], 
-        [289325.283844247, 4697739.09694425], 
-        [289325.373122334, 4697740.11739745], 
-        [289325.638243924, 4697741.10684469], 
-        [289326.071153432, 4697742.03522212], 
-        [289326.658697121, 4697742.87432147], 
-        [289327.383022775, 4697743.59864713], 
-        [289328.222122124, 4697744.18619082], 
-        [289329.15049956, 4697744.61910032], 
-        [289330.139946803, 4697744.88422191], 
-        [289331.1604, 4697744.9735]
-      ]
-    ]
-  }
-}
-]
 
 # targetUrl = "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_peaks/FeatureServer/2"
 # urlCheckDict = {targetUrl: "-peaks"}
@@ -512,25 +332,40 @@ features = [
 
 # connection = sqlite3.connect("/Users/apple/Desktop/python/internship/web_vue/web_viewer_back/web_app_db.sqlite")
 # cursor = connection.cursor()
-# i = "N1_15_2.8_20220620_153056.csv-buffer"
-# query = cursor.execute("SELECT Source_name, EsriGeometry FROM BuffersTable WHERE Source_name == '" + i + "'").fetchall()[0]
+# i = "N1_15_2.8_20220620_153056.csv-pa"
+# query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + i + "'").fetchall()
+# print(query)
 # print(query[0])
-
+# for j in query[:2]:
+#   esriPoint = {"attributes" : {
+#                   "Inspection_Date": j[0],
+#                   "Inspection_Time": j[0].split(" ")[1],
+#                   "Lat": j[1],
+#                   "Long": j[2],
+#                   "CH4": j[3],
+#                   "Source_Name" : j[4].split("-")[0]
+#                   },
+#                   "geometry" :
+#                   {
+#                       "x" : j[5],
+#                       "y" : j[6]
+#                   }}
+#   print(esriPoint)
 
 # a = "N1_15_2.8_20220620_153056.csv-peaks"
 # sourceName = a.replace("peaks", "path")
 # query = cursor.execute("SELECT Flight_date, Senselat, Senselong, CH4, Source_name, Utmlong, Utmlat FROM PointsTable WHERE Source_name == '" + sourceName + "' AND Peak == 1").fetchall()
 # orig_id = 1
-# for i in query:
-#     peakCenter = Point(i[5], i[6])
+# for i in query[:2]:
+#     # peakCenter = Point(i[5], i[6])
 #     outerCircle = {"attributes" : {
 #                     "Flight_Date": i[0],
 #                     "SenseLat": i[1],
 #                     "SenseLong": i[2],
 #                     "CH4": i[3],
 #                     "Source_Name" : i[4].split("-")[0],
-#                     "BUFF_DIST": 13.57884,
-#                     "ORIG_FID": orig_id
+#                     # "BUFF_DIST": 13.57884,
+#                     # "ORIG_FID": orig_id
 #                     }}
 #     outerBuffer = mapping(peakCenter.buffer(13.57884, resolution=6))
 #     esriOuterBuffer = json.loads(app.toEsriGeometry(outerBuffer))
@@ -594,46 +429,46 @@ features = [
 #     print(i)
 
 
-appendDict = {"a": 4, "b": 2, "c": 6, "d": 4}
-appendList = [
-  {"name": "a", "status": True},
-  {"name": "a", "status": True},
-  {"name": "a", "status": False},
-  {"name": "a", "status": True},
+# appendDict = {"a": 4, "b": 2, "c": 6, "d": 4}
+# appendList = [
+#   {"name": "a", "status": True},
+#   {"name": "a", "status": True},
+#   {"name": "a", "status": False},
+#   {"name": "a", "status": True},
 
-  {"name": "b", "status": True},
-  {"name": "b", "status": True},
+#   {"name": "b", "status": True},
+#   {"name": "b", "status": True},
 
-  {"name": "c", "status": False},
-  {"name": "c", "status": True},
-  {"name": "c", "status": True},
-  {"name": "c", "status": True},
-  {"name": "c", "status": True},
-  {"name": "c", "status": True},
+#   {"name": "c", "status": False},
+#   {"name": "c", "status": True},
+#   {"name": "c", "status": True},
+#   {"name": "c", "status": True},
+#   {"name": "c", "status": True},
+#   {"name": "c", "status": True},
 
-  {"name": "d", "status": True},
-  {"name": "d", "status": True},
-  {"name": "d", "status": True},
-  {"name": "d", "status": True}
-]
+#   {"name": "d", "status": True},
+#   {"name": "d", "status": True},
+#   {"name": "d", "status": True},
+#   {"name": "d", "status": True}
+# ]
 
-returnJson={"peaksSuccess": [], "peaksFail": []}
-appendIndex = 0
-skippedIndexNumber = 0
-while appendIndex < len(appendList):
-    result = appendList[appendIndex]
-    # recombine the layer name
-    layerName = appendList[appendIndex]['name']
-    # get the total number of peaks of current appended layers and compare it with the current appendIndex
-    totalPeaksNumber = appendDict[layerName]
-    if result["status"]:
-        # if the current index - previously skipped index + 1 = total peaks number, then add peaks layer name to the returnJson
-        if appendIndex - skippedIndexNumber + 1 == totalPeaksNumber:
-            returnJson["peaksSuccess"] += [layerName]
-            skippedIndexNumber += totalPeaksNumber
-        appendIndex += 1
-    else:
-        returnJson["peaksFail"] += [layerName]
-        appendIndex = skippedIndexNumber + totalPeaksNumber
-        skippedIndexNumber += totalPeaksNumber
-print(returnJson)
+# returnJson={"peaksSuccess": [], "peaksFail": []}
+# appendIndex = 0
+# skippedIndexNumber = 0
+# while appendIndex < len(appendList):
+#     result = appendList[appendIndex]
+#     # recombine the layer name
+#     layerName = appendList[appendIndex]['name']
+#     # get the total number of peaks of current appended layers and compare it with the current appendIndex
+#     totalPeaksNumber = appendDict[layerName]
+#     if result["status"]:
+#         # if the current index - previously skipped index + 1 = total peaks number, then add peaks layer name to the returnJson
+#         if appendIndex - skippedIndexNumber + 1 == totalPeaksNumber:
+#             returnJson["peaksSuccess"] += [layerName]
+#             skippedIndexNumber += totalPeaksNumber
+#         appendIndex += 1
+#     else:
+#         returnJson["peaksFail"] += [layerName]
+#         appendIndex = skippedIndexNumber + totalPeaksNumber
+#         skippedIndexNumber += totalPeaksNumber
+# print(returnJson)
