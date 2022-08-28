@@ -108,7 +108,7 @@ def add_feature(token):
 # returnJson = {"result": []}
 # # 1.8462049961090088
 # start = time.time()
-# token = get_token("hangchen_sniffergis", "Ch970721")
+token = get_token("hangchen_sniffergis", "Ch970721")
 # add_feature(token)
 # add_feature(token, returnJson)
 # add_feature(token, returnJson)
@@ -116,16 +116,16 @@ def add_feature(token):
 # print(end - start)
 # print(returnJson)
 
-# urlList = [
-#     "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_points/FeatureServer/3",
-#     "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_buffer/FeatureServer/0",
-#     "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_peaks/FeatureServer/2",
-#     "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/test_inficon/FeatureServer/0",
-#     "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/test_inficon_buffer/FeatureServer/8"
-#     ]
+urlList = [
+    "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_points/FeatureServer/3",
+    "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_buffer/FeatureServer/0",
+    "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/web_app_test_peaks/FeatureServer/2",
+    "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/test_inficon/FeatureServer/0",
+    "https://services6.arcgis.com/QUg4M9ZDNdUHdQcy/arcgis/rest/services/test_inficon_buffer/FeatureServer/8"
+    ]
 
-# for i in urlList:
-#     delete_all(token, i)
+for i in urlList:
+    delete_all(token, i)
 
 # 0.7975919246673584
 # manager = mp.Manager()
